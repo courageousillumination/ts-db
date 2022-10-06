@@ -17,11 +17,11 @@ describe('parser', () => {
     describe("insert expression", () => {
         describe("success cases", () => {
             it("parses an insert into expression", () => {
-                const result = parseExpression("insert into table1 values ( 'foo' )")
+                const result = parseExpression('insert into table1 values ( "foo" )')
                 expect(result).toEqual({
                     type: 'insertInto',
                     insertInto: { table: 'table1' },
-                    values: { values: ["'foo'"] } // TODO: Want to parse out string literals...
+                    values: { values: ['foo'] }
                 })
             })
         })

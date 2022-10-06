@@ -60,7 +60,7 @@ class Parser {
         let token = this.peekToken()
         const columns: string[] = []
         while (token !== null && token.type === 'identifier') {
-            columns.push(token.value)
+            columns.push(token.lexeme)
             this.consumeToken()
             token = this.peekToken()
         }
@@ -71,7 +71,7 @@ class Parser {
         this.consumeToken() // Get the FROM 
         const table = this.consumeToken()
         if (table.type === 'identifier') {
-            return { table: table.value }
+            return { table: table.lexeme }
         }
         throw new Error("Unexpected token for FROM clause")
     }
@@ -81,7 +81,7 @@ class Parser {
         this.consumeToken()
         const table = this.consumeToken()
         if (table.type === 'identifier') {
-            return { table: table.value }
+            return { table: table.lexeme }
         }
         throw new Error("Unexpected token for INSERT INTO clause")
     }
@@ -90,8 +90,8 @@ class Parser {
         this.consumeToken() // Open parentheses
         let token = this.peekToken()
         let values = []
-        while (token && token.type === 'identifier') {
-            values.push(token.value)
+        while (token && token.type === 'literal') {
+            values.push(token.literal)
             this.consumeToken()
             token = this.peekToken()
         }

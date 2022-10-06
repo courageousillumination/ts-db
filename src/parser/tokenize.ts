@@ -1,28 +1,91 @@
-import { Token } from "./token";
+import { Token, TokenType } from "./token";
 
-const handleToken = (input: string): Token => {
-    if (input.toLowerCase() === 'select') {
-        return { type: 'select' }
+const isAlpha = (x: string) => /^[a-z]+$/i.test(x)
+const isAlphaNumeric = (x: string) => /^[a-z0-9]+$/i.test(x)
+
+
+const KEYWORDS = ['select', 'from', 'into', 'insert']
+
+class Tokenizer {
+    private position = 0;
+    private tokens: Token[] = []
+    private start = 0
+    constructor(private readonly input: string) { }
+
+    public tokenize(): Token[] {
+        while (!this.isAtEnd()) {
+            this.start = this.position
+            this.scanToken()
+        }
+        return this.tokens
     }
-    if (input.toLowerCase() === 'from') {
-        return { type: 'from' }
+
+    private scanToken() {
+        const char = this.advance()
+        switch (char) {
+            case '*': return this.addToken('star')
+            case ',': return this.addToken('comma')
+            case '(': return this.addToken('leftParen')
+            case ')': return this.addToken('rightParen')
+            case ';': return this.addToken('semicolon')
+            case ' ':
+            case '\r':
+            case '\t':
+                break // Ignore white space
+            case '"': return this.string()
+            default:
+                if (isAlpha(char)) {
+                    return this.identifier();
+                }
+                throw new Error(`Unexpected token at position ${this.position}`)
+        }
     }
-    if (input.toLowerCase() === 'insert') {
-        return { type: 'insert' }
+
+    private identifier() {
+        while (isAlphaNumeric(this.input[this.position]) && !this.isAtEnd()) {
+            this.advance();
+        }
+        const lexeme = this.input.slice(this.start, this.position)
+        if (KEYWORDS.includes(lexeme)) {
+            return this.addToken(lexeme as TokenType)
+        } else {
+            return this.addToken('identifier')
+        }
     }
-    if (input.toLowerCase() === 'into') {
-        return { type: 'into' }
+
+    /** Tokenizes a string literal. */
+    private string() {
+        while (this.input[this.position] !== '"' && !this.isAtEnd()) {
+            this.advance()
+        }
+
+        if (this.isAtEnd()) {
+            throw new Error("Unterminated string literal")
+        }
+
+        this.advance()
+        return this.addToken('literal', this.input.slice(this.start + 1, this.position - 1))
     }
-    if (input.toLowerCase() === '(') {
-        return { type: 'leftParen' }
+
+    private advance() {
+        return this.input[this.position++]
     }
-    if (input.toLowerCase() === ')') {
-        return { type: 'rightParen' }
+
+    private isAtEnd(): boolean {
+        return this.position >= this.input.length
     }
-    return { type: 'identifier', value: input }
+
+    private addToken(type: TokenType, literal?: unknown) {
+        this.tokens.push({
+            type,
+            literal,
+            lexeme: this.input.slice(this.start, this.position)
+        })
+    }
 }
 
 export const tokenize = (input: string): Token[] => {
-    const words = input.split(" ");
-    return words.map(handleToken)
+    const tokenizer = new Tokenizer(input)
+    return tokenizer.tokenize()
+
 }
