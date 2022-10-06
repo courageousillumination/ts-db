@@ -8,8 +8,12 @@ const startRepl = () => {
     const client = new Client()
     let command = PROMPT("> ")
     while (command !== 'exit') {
-        const result = client.execute(command)
-        console.log(result)
+        if (command === 'debug') {
+            client.dumpDatabase()
+        } else {
+            const result = client.execute(command)
+            console.log(result)
+        }
         command = PROMPT('> ')
     }
 }
