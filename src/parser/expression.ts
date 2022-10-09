@@ -1,51 +1,39 @@
-export interface SelectClause {
-    columns: string[]
+import { TokenType } from "./token"
+
+export interface NumberLiteral {
+    type: 'number'
+    value: number
 }
 
-export interface FromClause {
-    table: string
+export interface StringLiteral {
+    type: 'string'
+    value: string
 }
 
-export interface InsertIntoClause {
-    table: string
+export type Literal = NumberLiteral | StringLiteral
+
+export type LiteralExpression = {
+    type: 'literal'
+    literal: Literal
 }
 
-export interface ValuesClause {
-    values: unknown[] // Can be varying types
+export type IdentifierExpression = {
+    type: 'identifier',
+    identifier: string
 }
 
-export interface OrderByClause {
-    orderBy: (string | number)[]
+export type BinaryExpression = {
+    type: 'binary',
+    operator: TokenType,
+    left: Expression,
+    right: Expression
 }
 
-
-export type ColumnType = 'integer'
-
-export interface ColumnSchema {
-    name: string,
-    type: ColumnType
-}
-
-export interface SelectExpression {
-    type: 'select'
-    select: SelectClause
-    from: FromClause
-
-    orderBy?: OrderByClause
-}
-
-export interface InsertIntoExpression {
-    type: 'insertInto'
-    insertInto: InsertIntoClause
-    values: ValuesClause
+export type GroupingExpression = {
+    type: 'grouping'
+    expression: Expression
 }
 
 
 
-export interface CreateTableExpression {
-    type: 'createTable',
-    tableName: string
-    columns: ColumnSchema[]
-}
-
-export type Expression = SelectExpression | InsertIntoExpression | CreateTableExpression
+export type Expression = LiteralExpression | BinaryExpression | GroupingExpression | IdentifierExpression

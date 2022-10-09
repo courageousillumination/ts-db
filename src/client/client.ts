@@ -1,6 +1,8 @@
 import { Database } from "../core/database";
-import { CreateTableExpression, InsertIntoExpression, SelectExpression } from "../parser/expression";
-import { parseExpression } from "../parser/parser";
+import { Expression } from "../parser/expression";
+// import { CreateTableExpression, InsertIntoExpression, SelectExpression } from "../parser/expression";
+import { parse } from "../parser/parser";
+import { CreateTableStatement, ExpresisonStatement, InsertStatement, SelectStatement } from "../parser/statement";
 
 
 export class Client {
@@ -10,15 +12,16 @@ export class Client {
     constructor() { }
 
     public execute(input: string) {
-        const expressions = parseExpression(input)
-        for (const expression of expressions) {
-            switch (expression.type) {
-                case 'select':
-                    return this.handleSelectExpression(expression)
-                case 'insertInto':
-                    return this.handleInsertInto(expression)
+        const statements = parse(input)
+
+        for (const statement of statements) {
+            switch (statement.type) {
                 case 'createTable':
-                    return this.handleCreateTable(expression)
+                    return this.handleCreateTable(statement)
+                case 'insert':
+                    return this.handleInsertInto(statement)
+                case 'select':
+                    return this.handleSelect(statement)
                 default:
                     console.warn("Unhandled expression")
             }
@@ -29,16 +32,34 @@ export class Client {
         console.log(this.database)
     }
 
-    private handleSelectExpression(expr: SelectExpression) {
-        return this.database.select(expr.from.table, expr.select.columns, expr.orderBy?.orderBy)
+    private handleSelect(statement: SelectStatement) {
+        // return this.database.select(expr.from.table, expr.select.columns, expr.orderBy?.orderBy)
     }
 
-    private handleInsertInto(expr: InsertIntoExpression) {
-        console.log(expr)
-        return this.database.insertInto(expr.insertInto.table, expr.values.values)
+    private handleInsertInto(statement: InsertStatement) {
+        // return this.database.insertInto(expr.insertInto.table, expr.values.values)
     }
 
-    private handleCreateTable(expr: CreateTableExpression) {
-        return this.database.createTable(expr.tableName, { columns: expr.columns })
+    private handleCreateTable(statement: CreateTableStatement) {
+        return this.database.createTable(statement.table, { columns: statement.columnDefinitions })
+    }
+
+    private handleExpressionStatement(statement: ExpresisonStatement) {
+        // return this.handleExpression(statement.expression)
+    }
+
+    private handleExpression(expr: Expression): any {
+        // switch (expr.type) {
+        //     case 'grouping':
+        //         return this.handleExpression(expr.expression)
+        //     case 'literal':
+        //         return expr.literal.value
+        //     case 'binary':
+        //         const left = this.handleExpression(expr.left)
+        //         const right = this.handleExpression(expr.right)
+        //         if (expr.operator === 'star') {
+        //             return left * right
+        //         }
+        // }
     }
 }

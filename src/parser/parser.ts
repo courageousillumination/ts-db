@@ -1,205 +1,206 @@
-import { ColumnSchema, ColumnType, CreateTableExpression, Expression, FromClause, InsertIntoClause, InsertIntoExpression, OrderByClause, SelectClause, SelectExpression, ValuesClause } from "./expression";
-import { Token } from "./token";
+// import { ColumnSchema, ColumnType, CreateTableExpression, Expression, FromClause, InsertIntoClause, InsertIntoExpression, OrderByClause, SelectClause, SelectExpression, ValuesClause } from "./expression";
+
+import { Expression, IdentifierExpression, Literal, LiteralExpression } from "./expression";
+import { CreateTableStatement, InsertStatement, SelectStatement, Statement } from "./statement";
+import { Token, TokenType } from "./token";
 import { tokenize } from "./tokenize";
 
-export const parseExpression = (input: string): Expression[] => {
+
+export const parse = (input: string) => {
     const tokens = tokenize(input)
     const parser = new Parser(tokens)
     return parser.parse()
 }
 
-// This is a simple recursive descent parser that works on token
-// strings.
+export const parseExpression = (input: string): any[] => {
+    return []
+}
+
 class Parser {
-    private position = 0
+    private position = 0;
     constructor(private readonly tokens: Token[]) { }
 
-    public parse(): Expression[] {
-        const expressions = []
-        while (this.position < this.tokens.length) {
-            expressions.push(this.expression())
-            if (this.peekToken()?.type === 'semicolon') {
-                this.consumeToken() // Get the last semi colon
+    public parse() {
+        const statements = []
+        while (!this.isAtEnd()) {
+            statements.push(this.statement())
+            if (this.isAtEnd()) {
+                break
             }
+            this.consumeToken('semicolon')
         }
-        return expressions
+        return statements
     }
 
-    private expression(): Expression {
-        const token = this.peekToken()
+    private statement(): Statement {
+        if (this.match('select')) {
+            return this.selectStatement()
+        }
 
-        if (token === null) {
-            throw new Error("Unexpected end of input")
+        if (this.match('insert')) {
+            return this.insertStatement()
         }
-        if (token.type === 'select') {
-            return this.selectExpression()
+
+        if (this.match('create')) {
+            return this.createTableStatement()
         }
-        if (token.type === 'insert') {
-            return this.insertIntoExpression()
+
+
+        const expression = this.expression()
+        return {
+            type: 'expression',
+            expression
         }
-        if (token.type == 'create') {
-            return this.createTableExpression()
-        }
-        throw new Error(`Unexpected token: ${token.type}`)
     }
 
-    private createTableExpression(): CreateTableExpression {
-        this.consumeToken() // create
-        this.consumeToken() // table
+    private createTableStatement(): CreateTableStatement {
+        this.consumeToken('table')
+        const table = this.consumeToken('identifier')
+        this.consumeToken('leftParen')
 
-        const tableName = this.consumeToken()
-
-        if (tableName.type !== 'identifier') {
-            throw new Error("Unexpected token for CREATE TABLE clause")
-            // return { table: table.lexeme }
-        }
-
-        this.consumeToken() // '('
-
-        const columns: ColumnSchema[] = []
-
-        while (this.peekToken() && this.peekToken()?.type !== 'rightParen') {
-            const schema = this.columnSchema()
-            columns.push(schema)
-            if (this.peekToken()?.type === 'comma') {
-                this.consumeToken()
+        const columns = this.parseList(() => {
+            const name = this.consumeToken('identifier')
+            const type = this.consumeToken('integer') // TODO: Support other types
+            return {
+                name: name.lexeme, type: type.type
             }
-        }
-
-        this.consumeToken() // ')'
-
+        }, 'rightParen')
 
         return {
             type: 'createTable',
-            tableName: tableName.lexeme,
-            columns: columns
+            table: table.lexeme,
+            columnDefinitions: columns as any
         }
     }
 
-    private columnSchema(): ColumnSchema {
-        const columnName = this.consumeToken()
+    private insertStatement(): InsertStatement {
+        this.consumeToken('into')
+        const table = this.consumeToken('identifier')
+        let columns: string[] | undefined = undefined
+        if (this.match('leftParen')) {
+            columns = this.parseList(() => {
+                const token = this.consumeToken('identifier')
+                return token.lexeme
+            }, 'rightParen')
 
-        if (columnName.type !== 'identifier') {
-            throw new Error("Unexpected token for CREATE TABLE clause")
         }
 
-        const columnTypeToken = this.consumeToken()
-        let columnType: ColumnType
-        if (columnTypeToken.type === 'integer') {
-            columnType = 'integer'
-        } else {
-            throw new Error("Unexpected column type")
-        }
+        this.consumeToken('values')
+        this.consumeToken('leftParen')
+        const values = this.parseList(() => this.expression(), 'rightParen')
         return {
-            name: columnName.lexeme,
-            type: columnType
+            type: 'insert',
+            table: table.lexeme,
+            values: values,
+            columns
         }
+
     }
 
-    private selectExpression(): SelectExpression {
-        const selectClause = this.selectClause()
-        const fromClause = this.fromClause()
-
-        const orderBy = this.peekToken()?.type === 'order' ? this.orderByClause() : undefined
+    private selectStatement(): SelectStatement {
+        const columns = this.parseList(() => this.expression(), 'from')
+        const table = this.consumeToken('identifier')
         return {
-            type:
-                'select',
-            select: selectClause,
-            from: fromClause,
-            orderBy
+            type: 'select',
+            table: table.lexeme,
+            columns
         }
     }
 
-    private insertIntoExpression(): InsertIntoExpression {
-        const insertIntoClause = this.insertIntoClause()
-        const valuesClause = this.valuesClause()
-        return {
-            type: 'insertInto',
-            insertInto: insertIntoClause,
-            values: valuesClause
-        }
+    /** An expression evaluates to a value. */
+    private expression(): Expression {
+        return this.factor()
     }
 
-    private selectClause(): SelectClause {
-        this.consumeToken() // Get the SELECT token
-        let token = this.peekToken()
-        const columns: string[] = []
-        while (token !== null && token.type === 'identifier') {
-            columns.push(token.lexeme)
-            this.consumeToken()
-            token = this.peekToken()
-        }
-        return { columns }
-    }
+    private factor(): Expression {
+        let expr = this.unary()
 
-    private fromClause(): FromClause {
-        this.consumeToken() // Get the FROM 
-        const table = this.consumeToken()
-        if (table.type === 'identifier') {
-            return { table: table.lexeme }
-        }
-        throw new Error("Unexpected token for FROM clause")
-    }
-
-    private insertIntoClause(): InsertIntoClause {
-        this.consumeToken() // consume both keywords
-        this.consumeToken()
-        const table = this.consumeToken()
-        if (table.type === 'identifier') {
-            return { table: table.lexeme }
-        }
-        throw new Error("Unexpected token for INSERT INTO clause")
-    }
-    private valuesClause(): ValuesClause {
-        this.consumeToken() // Values
-        this.consumeToken() // Open parentheses
-        let token = this.peekToken()
-        let values = []
-        while (token && token.type === 'literal') {
-            values.push(token.literal)
-            this.consumeToken()
-            token = this.peekToken()
-            if (token?.type === 'comma') {
-                this.consumeToken()
-                token = this.peekToken()
+        while (this.match('star')) {
+            const operator = this.previous();
+            const right = this.unary()
+            expr = {
+                type: 'binary',
+                operator: operator.type,
+                left: expr,
+                right
             }
         }
 
-        this.consumeToken() // ')'
-        return { values }
+        return expr;
     }
 
-    private orderByClause(): OrderByClause {
-        this.consumeToken() // order
-        this.consumeToken() // by
-
-        const orderBy = []
-
-        while (this.peekToken() && this.peekToken()?.type === 'identifier' || this.peekToken()?.type === 'literal') {
-            const name = this.consumeToken()
-
-            if (name.type === 'literal') {
-                orderBy.push(name.literal as number)
-            } else {
-                orderBy.push(name.lexeme)
-            }
-            if (this.peekToken()?.type === 'comma') {
-                this.consumeToken()
-            }
-        }
-
-
-        return {
-            orderBy: orderBy
-        }
+    private unary(): Expression {
+        return this.primary()
     }
 
-    private peekToken(): Token | null {
+    private primary(): Expression {
+        if (this.match('literal')) {
+            const literal = this.previous()
+            if (typeof literal.literal === 'number') {
+                return { type: 'literal', literal: { type: 'number', value: literal.literal } }
+            }
+            if (typeof literal.literal === 'string') {
+                return { type: 'literal', literal: { type: 'string', value: literal.literal } }
+            }
+            throw new Error("Unknown literal")
+        }
+
+        if (this.match('identifier')) {
+            return { type: 'identifier', identifier: this.previous().lexeme }
+        }
+
+        if (this.match('leftParen')) {
+            const expr = this.expression()
+            this.consumeToken('rightParen')
+            return {
+                type: 'grouping',
+                expression: expr
+            }
+        }
+        throw new Error("Unexpected primary")
+    }
+
+    private parseList<T>(getter: () => T, end: TokenType) {
+        const results = []
+        while (!this.match(end) && !this.isAtEnd()) {
+            const expression = getter()
+            results.push(expression)
+            if (this.peekToken()?.type !== end) {
+                this.consumeToken('comma')
+            }
+        }
+        return results
+    }
+
+
+    /** Consumes a token (and checks that it is the right type). */
+    private consumeToken(tokenType?: TokenType) {
+        const token = this.tokens[this.position++]
+        if (!token) {
+            throw new Error("Unexpected end of input")
+        }
+        if (tokenType && tokenType !== token.type) {
+            throw new Error(`Token type did not match. Expecte ${tokenType} got ${token.type}`)
+        }
+        return token
+    }
+
+    private peekToken() {
         return this.tokens[this.position]
     }
 
-    private consumeToken(): Token {
-        const token = this.tokens[this.position++]
-        return token
+    private previous() {
+        return this.tokens[this.position - 1]
+    }
+
+    private match(tokenType: TokenType) {
+        if (!this.isAtEnd() && this.peekToken().type === tokenType) {
+            return this.consumeToken()
+        }
+        return null
+    }
+
+    private isAtEnd() {
+        return this.position >= this.tokens.length
     }
 }
