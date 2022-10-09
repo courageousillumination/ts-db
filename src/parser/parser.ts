@@ -1,4 +1,4 @@
-import { ColumnSchema, ColumnType, CreateTableExpression, Expression, FromClause, InsertIntoClause, InsertIntoExpression, SelectClause, SelectExpression, ValuesClause } from "./expression";
+import { ColumnSchema, ColumnType, CreateTableExpression, Expression, FromClause, InsertIntoClause, InsertIntoExpression, OrderByClause, SelectClause, SelectExpression, ValuesClause } from "./expression";
 import { Token } from "./token";
 import { tokenize } from "./tokenize";
 
@@ -99,11 +99,14 @@ class Parser {
     private selectExpression(): SelectExpression {
         const selectClause = this.selectClause()
         const fromClause = this.fromClause()
+
+        const orderBy = this.peekToken()?.type === 'order' ? this.orderByClause() : undefined
         return {
             type:
                 'select',
             select: selectClause,
-            from: fromClause
+            from: fromClause,
+            orderBy
         }
     }
 
@@ -164,6 +167,31 @@ class Parser {
 
         this.consumeToken() // ')'
         return { values }
+    }
+
+    private orderByClause(): OrderByClause {
+        this.consumeToken() // order
+        this.consumeToken() // by
+
+        const orderBy = []
+
+        while (this.peekToken() && this.peekToken()?.type === 'identifier' || this.peekToken()?.type === 'literal') {
+            const name = this.consumeToken()
+
+            if (name.type === 'literal') {
+                orderBy.push(name.literal as number)
+            } else {
+                orderBy.push(name.lexeme)
+            }
+            if (this.peekToken()?.type === 'comma') {
+                this.consumeToken()
+            }
+        }
+
+
+        return {
+            orderBy: orderBy
+        }
     }
 
     private peekToken(): Token | null {

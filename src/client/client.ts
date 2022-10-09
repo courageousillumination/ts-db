@@ -30,7 +30,7 @@ export class Client {
     }
 
     private handleSelectExpression(expr: SelectExpression) {
-        return this.database.select(expr.from.table, expr.select.columns)
+        return this.database.select(expr.from.table, expr.select.columns, expr.orderBy?.orderBy)
     }
 
     private handleInsertInto(expr: InsertIntoExpression) {

@@ -11,6 +11,16 @@ describe('parser', () => {
                     from: { table: 'table1' }
                 }])
             })
+
+            it('supports order by', () => {
+                const result = parseExpression("select foo from table1 order by foo")
+                expect(result).toEqual([{
+                    type: 'select',
+                    select: { columns: ['foo'] },
+                    from: { table: 'table1' },
+                    orderBy: { orderBy: ['foo'] }
+                }])
+            })
         })
     })
 
@@ -48,6 +58,25 @@ describe('parser', () => {
                     ]
                 }])
             })
+        })
+    })
+
+
+    // CASE WHEN c > (SELECT avg(c) FROM t1) THEN a * 2 ELSE b * 10 END
+    describe('case expression', () => {
+        it('handles a simple case', () => {
+            const result = parseExpression('case when 1 then 1 end')
+            expect(result).toEqual([{
+                type: 'case',
+                when: [{
+                    condition: 1,
+                    result: 1
+                }]
+            }])
+        })
+
+        it('handles an else', () => {
+
         })
     })
 })

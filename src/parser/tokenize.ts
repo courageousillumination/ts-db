@@ -4,7 +4,21 @@ const isDigit = (x: string) => /^[0-9]+$/i.test(x)
 const isAlpha = (x: string) => /^[a-z]+$/i.test(x)
 const isAlphaNumeric = (x: string) => /^[a-z0-9]+$/i.test(x)
 
-const KEYWORDS = ['select', 'from', 'into', 'insert', 'create', 'table', 'integer']
+// 
+const KEYWORDS = ['select',
+    'from',
+    'into',
+    'insert',
+    'create',
+    'table',
+    'integer',
+    'order',
+    'by',
+    'case',
+    'when',
+    'then',
+    'end',
+    'avg']
 
 class Tokenizer {
     private position = 0;
@@ -28,6 +42,7 @@ class Tokenizer {
             case '(': return this.addToken('leftParen')
             case ')': return this.addToken('rightParen')
             case ';': return this.addToken('semicolon')
+            case '>': return this.addToken('greaterThan')
             case '-':
                 if (this.peek() === '-') {
                     // Comment

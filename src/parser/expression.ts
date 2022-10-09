@@ -14,6 +14,10 @@ export interface ValuesClause {
     values: unknown[] // Can be varying types
 }
 
+export interface OrderByClause {
+    orderBy: (string | number)[]
+}
+
 
 export type ColumnType = 'integer'
 
@@ -26,7 +30,8 @@ export interface SelectExpression {
     type: 'select'
     select: SelectClause
     from: FromClause
-    // Other optional clauses can go here
+
+    orderBy?: OrderByClause
 }
 
 export interface InsertIntoExpression {

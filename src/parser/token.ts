@@ -1,5 +1,5 @@
-type Keyword = 'select' | 'from' | 'insert' | 'into' | 'create' | 'table' | 'integer'
-type SpecialCharacter = 'star' | 'leftParen' | 'rightParen' | 'comma' | 'semicolon'
+type Keyword = 'select' | 'from' | 'insert' | 'into' | 'create' | 'table' | 'integer' | 'order' | 'by'
+type SpecialCharacter = 'star' | 'leftParen' | 'rightParen' | 'comma' | 'semicolon' | 'greaterThan'
 
 
 export type TokenType = Keyword | SpecialCharacter | 'literal' | 'identifier'

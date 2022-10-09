@@ -18,9 +18,9 @@ export class Database {
         return table?.insertInto(values)
     }
 
-    public select(tableName: string, columns: string[]) {
+    public select(tableName: string, columns: string[], orderBy?: (string | number)[]) {
         const table = this.database.get(tableName)
-        return table?.select(columns)
+        return table?.select(columns, orderBy)
     }
 }
 
