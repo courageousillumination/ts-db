@@ -1,4 +1,4 @@
-type Keyword = 'select' | 'from' | 'insert' | 'into'
+type Keyword = 'select' | 'from' | 'insert' | 'into' | 'create' | 'table' | 'integer'
 type SpecialCharacter = 'star' | 'leftParen' | 'rightParen' | 'comma' | 'semicolon'
 
 

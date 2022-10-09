@@ -1,8 +1,8 @@
-import { Expression, FromClause, InsertIntoClause, InsertIntoExpression, SelectClause, SelectExpression, ValuesClause } from "./expression";
+import { ColumnSchema, ColumnType, CreateTableExpression, Expression, FromClause, InsertIntoClause, InsertIntoExpression, SelectClause, SelectExpression, ValuesClause } from "./expression";
 import { Token } from "./token";
 import { tokenize } from "./tokenize";
 
-export const parseExpression = (input: string): Expression => {
+export const parseExpression = (input: string): Expression[] => {
     const tokens = tokenize(input)
     const parser = new Parser(tokens)
     return parser.parse()
@@ -14,8 +14,15 @@ class Parser {
     private position = 0
     constructor(private readonly tokens: Token[]) { }
 
-    public parse() {
-        return this.expression()
+    public parse(): Expression[] {
+        const expressions = []
+        while (this.position < this.tokens.length) {
+            expressions.push(this.expression())
+            if (this.peekToken()?.type === 'semicolon') {
+                this.consumeToken() // Get the last semi colon
+            }
+        }
+        return expressions
     }
 
     private expression(): Expression {
@@ -24,14 +31,69 @@ class Parser {
         if (token === null) {
             throw new Error("Unexpected end of input")
         }
-
         if (token.type === 'select') {
             return this.selectExpression()
         }
         if (token.type === 'insert') {
             return this.insertIntoExpression()
         }
+        if (token.type == 'create') {
+            return this.createTableExpression()
+        }
         throw new Error(`Unexpected token: ${token.type}`)
+    }
+
+    private createTableExpression(): CreateTableExpression {
+        this.consumeToken() // create
+        this.consumeToken() // table
+
+        const tableName = this.consumeToken()
+
+        if (tableName.type !== 'identifier') {
+            throw new Error("Unexpected token for CREATE TABLE clause")
+            // return { table: table.lexeme }
+        }
+
+        this.consumeToken() // '('
+
+        const columns: ColumnSchema[] = []
+
+        while (this.peekToken() && this.peekToken()?.type !== 'rightParen') {
+            const schema = this.columnSchema()
+            columns.push(schema)
+            if (this.peekToken()?.type === 'comma') {
+                this.consumeToken()
+            }
+        }
+
+        this.consumeToken() // ')'
+
+
+        return {
+            type: 'createTable',
+            tableName: tableName.lexeme,
+            columns: columns
+        }
+    }
+
+    private columnSchema(): ColumnSchema {
+        const columnName = this.consumeToken()
+
+        if (columnName.type !== 'identifier') {
+            throw new Error("Unexpected token for CREATE TABLE clause")
+        }
+
+        const columnTypeToken = this.consumeToken()
+        let columnType: ColumnType
+        if (columnTypeToken.type === 'integer') {
+            columnType = 'integer'
+        } else {
+            throw new Error("Unexpected column type")
+        }
+        return {
+            name: columnName.lexeme,
+            type: columnType
+        }
     }
 
     private selectExpression(): SelectExpression {
@@ -94,7 +156,13 @@ class Parser {
             values.push(token.literal)
             this.consumeToken()
             token = this.peekToken()
+            if (token?.type === 'comma') {
+                this.consumeToken()
+                token = this.peekToken()
+            }
         }
+
+        this.consumeToken() // ')'
         return { values }
     }
 

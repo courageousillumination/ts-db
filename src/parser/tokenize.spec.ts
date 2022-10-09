@@ -27,14 +27,30 @@ describe('tokenize', () => {
                 expect(() => tokenize('"no end in site')).toThrow()
             })
         })
+
+        describe('number literals', () => {
+            it('parses an int', () => {
+                expect(tokenize("1")).toEqual([{ type: 'literal', lexeme: '1', literal: 1 }])
+            })
+        })
+    })
+
+    describe('comments', () => {
+        it('does not put anything in the tokens', () => {
+            expect(tokenize('-- foo bar baz')).toEqual([])
+        })
     })
 
     describe('keywords', () => {
         it('handles all keywords', () => {
-            const keywords = ['select', 'from', 'into', 'insert']
+            const keywords = ['select', 'from', 'into', 'insert', 'create', 'table', 'integer']
             for (const keyword of keywords) {
                 expect(tokenize(keyword)).toEqual([{ type: keyword, lexeme: keyword }])
             }
+        })
+
+        it('handles upper case versions', () => {
+            expect(tokenize('SELECT')).toEqual([{ type: 'select', lexeme: 'SELECT' }])
         })
     })
 

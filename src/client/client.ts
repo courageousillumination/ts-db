@@ -1,32 +1,27 @@
 import { Database } from "../core/database";
-import { TableSchema } from "../core/schema";
-import { InsertIntoExpression, SelectExpression } from "../parser/expression";
+import { CreateTableExpression, InsertIntoExpression, SelectExpression } from "../parser/expression";
 import { parseExpression } from "../parser/parser";
-
-
-const SCHEMA: TableSchema = {
-    columns: [{ name: 'test1' }]
-}
 
 
 export class Client {
     // TODO: At some point we'll have to clean this up.
     private readonly database: Database = new Database()
 
-    constructor() {
-        this.database.createTable('test', SCHEMA)
-    }
+    constructor() { }
 
     public execute(input: string) {
-        const expression = parseExpression(input)
-
-        switch (expression.type) {
-            case 'select':
-                return this.handleSelectExpression(expression)
-            case 'insertInto':
-                return this.handleInsertInto(expression)
-            default:
-                console.warn("Unhandled expression")
+        const expressions = parseExpression(input)
+        for (const expression of expressions) {
+            switch (expression.type) {
+                case 'select':
+                    return this.handleSelectExpression(expression)
+                case 'insertInto':
+                    return this.handleInsertInto(expression)
+                case 'createTable':
+                    return this.handleCreateTable(expression)
+                default:
+                    console.warn("Unhandled expression")
+            }
         }
     }
 
@@ -39,7 +34,11 @@ export class Client {
     }
 
     private handleInsertInto(expr: InsertIntoExpression) {
-        console.log(expr.values.values)
+        console.log(expr)
         return this.database.insertInto(expr.insertInto.table, expr.values.values)
+    }
+
+    private handleCreateTable(expr: CreateTableExpression) {
+        return this.database.createTable(expr.tableName, { columns: expr.columns })
     }
 }

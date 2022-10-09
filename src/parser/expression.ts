@@ -14,6 +14,14 @@ export interface ValuesClause {
     values: unknown[] // Can be varying types
 }
 
+
+export type ColumnType = 'integer'
+
+export interface ColumnSchema {
+    name: string,
+    type: ColumnType
+}
+
 export interface SelectExpression {
     type: 'select'
     select: SelectClause
@@ -28,4 +36,11 @@ export interface InsertIntoExpression {
 }
 
 
-export type Expression = SelectExpression | InsertIntoExpression
+
+export interface CreateTableExpression {
+    type: 'createTable',
+    tableName: string
+    columns: ColumnSchema[]
+}
+
+export type Expression = SelectExpression | InsertIntoExpression | CreateTableExpression
