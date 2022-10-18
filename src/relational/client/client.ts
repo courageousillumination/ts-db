@@ -1,4 +1,5 @@
 import { Expression } from "../parser/ast/expression";
+import { InsertStatement } from "../parser/ast/insert";
 import {
     FromClause,
     SelectClause,
@@ -34,7 +35,20 @@ class RelationalClient {
         switch (statement.type) {
             case "select":
                 return this.executeSelect(statement);
+            case "insert":
+                return this.executeInsert(statement);
         }
+    }
+
+    private async executeInsert(statement: InsertStatement) {
+        const values = await Promise.all(
+            statement.valuesClause.values.map(
+                async (x) => await this.evaluateExpression(null, [], x)
+            )
+        );
+        const table = await this.processFrom(statement.insertClause);
+        table.data.push(values);
+        return [values];
     }
 
     private async executeSelect(
@@ -105,7 +119,7 @@ class RelationalClient {
     }
 
     private async evaluateExpression(
-        table: Table,
+        table: Table | null,
         row: unknown[],
         expression: Expression
     ): Promise<any> {
@@ -113,10 +127,10 @@ class RelationalClient {
             case "value":
                 return expression.value;
             case "columnName":
-                const index = table.columns.findIndex(
+                const index = table?.columns.findIndex(
                     (x) => x === expression.name
                 );
-                if (index === -1) {
+                if (index === -1 || index === undefined) {
                     this.error(
                         `Could not find column named ${expression.name}`
                     );

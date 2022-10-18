@@ -70,6 +70,28 @@ describe("parser", () => {
         });
     });
 
+    describe("insert", () => {
+        it("parses an insert with values", () => {
+            const result = parse("INSERT INTO table1 VALUES (1);");
+            expect(result).toEqual([
+                {
+                    type: "insert",
+                    insertClause: {
+                        table: "table1",
+                    },
+                    valuesClause: {
+                        values: [
+                            {
+                                type: "value",
+                                value: 1,
+                            },
+                        ],
+                    },
+                },
+            ]);
+        });
+    });
+
     describe("expressions", () => {
         it("handles a column name", () => {
             const result = parse("foobar;");

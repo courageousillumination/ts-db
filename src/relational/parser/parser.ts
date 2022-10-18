@@ -3,6 +3,7 @@ import {
     ValueExpression,
     ColumnNameExpression,
 } from "./ast/expression";
+import { InsertStatement } from "./ast/insert";
 import {
     FromClause,
     ResultColumn,
@@ -44,11 +45,29 @@ class Parser {
         switch (token.type) {
             case "select":
                 return this.selectStatement();
+            case "insert":
+                return this.insertStatement();
             default: // Hacky....
                 // Try parsing as a simple expression statement.
                 this.position--;
                 return { type: "expression", expression: this.expression() };
         }
+    }
+
+    private insertStatement(): InsertStatement {
+        this.consume("into");
+        const table = this.table();
+        this.consume("values");
+        this.consume("leftParen");
+        const values = this.consumeList(() => this.expression(), "rightParen");
+
+        return {
+            type: "insert",
+            insertClause: {
+                table,
+            },
+            valuesClause: { values },
+        };
     }
 
     /** Parses a select statement specifically. */
@@ -122,7 +141,7 @@ class Parser {
         if (this.match("identifier")) {
             return { type: "columnName", name: this.previous().lexeme };
         }
-        this.error("Unhandled primary expression");
+        this.error(`Unhandled primary expression ${this.peekToken().type}`);
     }
 
     // UTILITIES
