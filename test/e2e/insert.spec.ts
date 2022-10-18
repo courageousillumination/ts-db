@@ -24,5 +24,16 @@ describe("INSERT statements", () => {
             );
             expect(selectResult).toContainEqual([1, "foo"]);
         });
+
+        it("supports changing column names", async () => {
+            const result = await client.executeQuery(
+                'INSERT INTO table1 (b, a) VALUES ("foo", 1);'
+            );
+            expect(result).toEqual([[1, "foo"]]);
+            const selectResult = await client.executeQuery(
+                "SELECT * FROM table1;"
+            );
+            expect(selectResult).toContainEqual([1, "foo"]);
+        });
     });
 });

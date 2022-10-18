@@ -57,7 +57,15 @@ class Parser {
     private insertStatement(): InsertStatement {
         this.consume("into");
         const table = this.table();
-        this.consume("values");
+        let columns;
+        if (!this.match("values")) {
+            this.consume("leftParen");
+            columns = this.consumeList(() => {
+                const token = this.consume("identifier");
+                return token.lexeme;
+            }, "rightParen");
+            this.consume("values");
+        }
         this.consume("leftParen");
         const values = this.consumeList(() => this.expression(), "rightParen");
 
@@ -65,6 +73,7 @@ class Parser {
             type: "insert",
             insertClause: {
                 table,
+                columns,
             },
             valuesClause: { values },
         };

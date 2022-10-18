@@ -47,7 +47,24 @@ class RelationalClient {
             )
         );
         const table = await this.processFrom(statement.insertClause);
-        table.data.push(values);
+        // Remap the values
+        if (statement.insertClause.columns) {
+            const indicies = statement.insertClause.columns.map((x) => {
+                const index = table.columns.findIndex((y) => y === x);
+                if (index === -1 || index === undefined) {
+                    this.error(`Could not find column named ${x}`);
+                }
+                return index;
+            });
+            const newValues = new Array(table.columns.length);
+            for (let i = 0; i < indicies.length; i++) {
+                newValues[indicies[i]] = values[i];
+            }
+            table.data.push(newValues);
+            return [newValues]; // Not sure about this actually...
+        } else {
+            table.data.push(values);
+        }
         return [values];
     }
 

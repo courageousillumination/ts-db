@@ -90,6 +90,27 @@ describe("parser", () => {
                 },
             ]);
         });
+
+        it("parses an insert with custom values order", () => {
+            const result = parse("INSERT INTO table1 (a) VALUES (1);");
+            expect(result).toEqual([
+                {
+                    type: "insert",
+                    insertClause: {
+                        table: "table1",
+                        columns: ["a"],
+                    },
+                    valuesClause: {
+                        values: [
+                            {
+                                type: "value",
+                                value: 1,
+                            },
+                        ],
+                    },
+                },
+            ]);
+        });
     });
 
     describe("expressions", () => {
