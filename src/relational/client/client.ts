@@ -7,6 +7,7 @@ import {
     SelectStatement,
 } from "../parser/ast/select";
 import { Statement } from "../parser/ast/statement";
+import { UpdateStatement } from "../parser/ast/update";
 import { parse } from "../parser/parser";
 import { RelationalLoadDataFormat, RelationalReturnDataFormat } from "./data";
 import {
@@ -49,7 +50,41 @@ class RelationalClient {
                 return this.executeInsert(statement);
             case "create":
                 return this.executeCreate(statement);
+            case "update":
+                return this.executeUpdate(statement);
         }
+    }
+
+    private async executeUpdate(statement: UpdateStatement) {
+        const table = await this.processFrom(statement);
+
+        for (const row of table.data) {
+            if (
+                statement.whereClause &&
+                (await this.evaluateExpression(
+                    table,
+                    row,
+                    statement.whereClause
+                ))
+            ) {
+                // We need to apply the update
+                for (const {
+                    columnName,
+                    expression,
+                } of statement.assignments) {
+                    // Is this actually right? what context does an update happen in?
+                    const value = await this.evaluateExpression(
+                        table,
+                        row,
+                        expression
+                    );
+                    const index = findColumnIndex(table, columnName);
+                    row[index] = value;
+                }
+            }
+        }
+
+        return undefined; // What should this return?
     }
 
     private async executeCreate(statement: CreateStatement) {
@@ -186,6 +221,8 @@ class RelationalClient {
                 switch (expression.operator) {
                     case ">":
                         return leftValue > rightValue;
+                    case "=":
+                        return leftValue === rightValue;
                     default:
                         this.error("Unhandle operation!");
                 }

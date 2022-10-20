@@ -9,7 +9,9 @@ type Keyword =
     | "order"
     | "by"
     | "values"
-    | "where";
+    | "where"
+    | "set"
+    | "update";
 
 type SpecialCharacter =
     | "star"
@@ -17,6 +19,7 @@ type SpecialCharacter =
     | "rightParen"
     | "comma"
     | "semicolon"
+    | "equal"
     | "greaterThan";
 
 export type TokenType = Keyword | SpecialCharacter | "literal" | "identifier";

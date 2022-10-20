@@ -21,6 +21,8 @@ const KEYWORDS = [
     "end",
     "avg",
     "where",
+    "set",
+    "update",
 ];
 
 class Tokenizer {
@@ -52,6 +54,8 @@ class Tokenizer {
                 return this.addToken("semicolon");
             case ">":
                 return this.addToken("greaterThan");
+            case "=":
+                return this.addToken("equal");
             case "-":
                 if (this.peek() === "-") {
                     // Comment

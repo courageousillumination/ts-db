@@ -12,6 +12,7 @@ import {
     SelectStatement,
 } from "./ast/select";
 import { Statement } from "./ast/statement";
+import { UpdateStatement } from "./ast/update";
 import { Token, tokenize, TokenType } from "./tokenizer";
 
 /**
@@ -50,11 +51,31 @@ class Parser {
                 return this.insertStatement();
             case "create":
                 return this.createStatement();
+            case "update":
+                return this.updateStatement();
             default: // Hacky....
                 // Try parsing as a simple expression statement.
                 this.position--;
                 return { type: "expression", expression: this.expression() };
         }
+    }
+
+    private updateStatement(): UpdateStatement {
+        const table = this.table();
+        this.consume("set");
+        // Kind of janky that we need an end token here.
+        const assignments = this.consumeList(() => {
+            const columnName = this.columnName();
+            this.consume("equal");
+            const expression = this.expression();
+            return { columnName, expression };
+        }, "where");
+        let where;
+        if (this.previous().type === "where") {
+            where = this.expression();
+        }
+
+        return { type: "update", table, assignments, whereClause: where };
     }
 
     private createStatement(): CreateStatement {
@@ -162,15 +183,18 @@ class Parser {
 
     private equality(): Expression {
         const left = this.primary();
-        const operator = this.match("greaterThan");
-        if (operator) {
-            const right = this.expression();
-            return {
-                type: "binary",
-                left,
-                right,
-                operator: operator.lexeme,
-            };
+
+        for (const tokenType of ["greaterThan", "equal"] as TokenType[]) {
+            const operator = this.match(tokenType);
+            if (operator) {
+                const right = this.expression();
+                return {
+                    type: "binary",
+                    left,
+                    right,
+                    operator: operator.lexeme,
+                };
+            }
         }
         return left;
     }
