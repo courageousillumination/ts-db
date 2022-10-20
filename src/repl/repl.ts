@@ -7,7 +7,7 @@ const PROMPT = promptSync();
 const executeScript = async (client: RelationalClient, script: string) => {
     const content = await promises.readFile(script);
     console.log(content.toString());
-    executeCommands(client, content.toString().split("\n"));
+    await executeCommands(client, content.toString().split("\n"));
 };
 
 const executeCommands = async (
