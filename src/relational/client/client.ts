@@ -1,3 +1,4 @@
+import { CreateStatement } from "../parser/ast/create";
 import { Expression } from "../parser/ast/expression";
 import { InsertStatement } from "../parser/ast/insert";
 import {
@@ -8,13 +9,18 @@ import {
 import { Statement } from "../parser/ast/statement";
 import { parse } from "../parser/parser";
 import { RelationalLoadDataFormat, RelationalReturnDataFormat } from "./data";
-import { Table, createTable } from "./table";
+import {
+    Table,
+    createTableFromData,
+    createTable,
+    findColumnIndex,
+} from "./table";
 
 class RelationalClient {
     private readonly tables: Table[] = [];
 
     public async loadData(tableName: string, data: RelationalLoadDataFormat) {
-        this.tables.push(createTable(tableName, data));
+        this.tables.push(createTableFromData(tableName, data));
     }
 
     public async executeQuery(
@@ -29,6 +35,10 @@ class RelationalClient {
         return returnResult;
     }
 
+    public async getTables() {
+        return this.tables.map((x) => x.name);
+    }
+
     private async executeStatement(
         statement: Statement
     ): Promise<RelationalReturnDataFormat | undefined> {
@@ -37,7 +47,14 @@ class RelationalClient {
                 return this.executeSelect(statement);
             case "insert":
                 return this.executeInsert(statement);
+            case "create":
+                return this.executeCreate(statement);
         }
+    }
+
+    private async executeCreate(statement: CreateStatement) {
+        this.tables.push(createTable(statement.table, statement.columns));
+        return undefined;
     }
 
     private async executeInsert(statement: InsertStatement) {
@@ -50,7 +67,7 @@ class RelationalClient {
         // Remap the values
         if (statement.insertClause.columns) {
             const indicies = statement.insertClause.columns.map((x) => {
-                const index = table.columns.findIndex((y) => y === x);
+                const index = findColumnIndex(table, x);
                 if (index === -1 || index === undefined) {
                     this.error(`Could not find column named ${x}`);
                 }
@@ -144,9 +161,10 @@ class RelationalClient {
             case "value":
                 return expression.value;
             case "columnName":
-                const index = table?.columns.findIndex(
-                    (x) => x === expression.name
-                );
+                if (!table) {
+                    this.error("Not in a tabel context");
+                }
+                const index = findColumnIndex(table, expression.name);
                 if (index === -1 || index === undefined) {
                     this.error(
                         `Could not find column named ${expression.name}`

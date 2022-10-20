@@ -10,10 +10,13 @@ const executeScript = async (client: RelationalClient, script: string) => {
     executeCommands(client, content.toString().split("\n"));
 };
 
-const executeCommands = (client: RelationalClient, commands: string[]) => {
+const executeCommands = async (
+    client: RelationalClient,
+    commands: string[]
+) => {
     for (const command of commands) {
         console.log("> ", command);
-        const result = client.executeQuery(command);
+        const result = await client.executeQuery(command);
         console.log(result);
     }
 };
@@ -27,7 +30,7 @@ const startRepl = async () => {
 
     let command = PROMPT("> ");
     while (command !== "exit") {
-        const result = client.executeQuery(command);
+        const result = await client.executeQuery(command);
         console.log(result);
         command = PROMPT("> ");
     }

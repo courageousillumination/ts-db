@@ -1,3 +1,4 @@
+import { ColumnType, CreateStatement } from "./ast/create";
 import {
     Expression,
     ValueExpression,
@@ -47,11 +48,42 @@ class Parser {
                 return this.selectStatement();
             case "insert":
                 return this.insertStatement();
+            case "create":
+                return this.createStatement();
             default: // Hacky....
                 // Try parsing as a simple expression statement.
                 this.position--;
                 return { type: "expression", expression: this.expression() };
         }
+    }
+
+    private createStatement(): CreateStatement {
+        this.consume("table");
+        const table = this.table();
+        this.consume("leftParen");
+        const columns = this.consumeList(() => {
+            const name = this.columnName();
+            const type = this.columnType();
+            return { name, type };
+        }, "rightParen");
+        return {
+            type: "create",
+            table,
+            columns,
+        };
+    }
+
+    private columnName() {
+        const token = this.consume("identifier");
+        return token.lexeme;
+    }
+
+    private columnType(): ColumnType {
+        if (this.match("integer")) {
+            return "integer";
+        }
+        this.error("Unknown column type");
+        // if (this.match('string'))
     }
 
     private insertStatement(): InsertStatement {
