@@ -161,4 +161,12 @@ describe("parser", () => {
             ]);
         });
     });
+
+    describe("compound statements", () => {
+        it.only("works", () => {
+            const result = parse(
+                "SELECT c-d,        CASE WHEN a<b-3 THEN 111 END from TABLE1;"
+            );
+        });
+    });
 });

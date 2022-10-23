@@ -19,9 +19,18 @@ export interface FromClause {
     table: string;
 }
 
+export interface OrderByTerm {
+    expression: Expression;
+    direction?: "asc" | "desc";
+}
+export interface OrderByClause {
+    orderBy: OrderByTerm[];
+}
+
 export interface SelectStatement {
     type: "select";
     selectClause: SelectClause;
     fromClause: FromClause;
     whereClause?: Expression;
+    orderByClause?: OrderByClause;
 }

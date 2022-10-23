@@ -11,7 +11,17 @@ type Keyword =
     | "values"
     | "where"
     | "set"
-    | "update";
+    | "update"
+    | "asc"
+    | "desc"
+    | "limit"
+    | "case"
+    | "then"
+    | "when"
+    | "end"
+    | "else"
+    | "avg" // Functions as keywords is janky as all hell...
+    | "count";
 
 type SpecialCharacter =
     | "star"
@@ -20,7 +30,11 @@ type SpecialCharacter =
     | "comma"
     | "semicolon"
     | "equal"
-    | "greaterThan";
+    | "greaterThan"
+    | "plus"
+    | "slash"
+    | "minus"
+    | "lessThan";
 
 export type TokenType = Keyword | SpecialCharacter | "literal" | "identifier";
 

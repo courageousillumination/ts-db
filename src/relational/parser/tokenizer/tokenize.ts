@@ -23,6 +23,11 @@ const KEYWORDS = [
     "where",
     "set",
     "update",
+    "asc",
+    "desc",
+    "else",
+    "end",
+    "count",
 ];
 
 class Tokenizer {
@@ -54,8 +59,14 @@ class Tokenizer {
                 return this.addToken("semicolon");
             case ">":
                 return this.addToken("greaterThan");
+            case "<":
+                return this.addToken("lessThan");
             case "=":
                 return this.addToken("equal");
+            case "+":
+                return this.addToken("plus");
+            case "/":
+                return this.addToken("slash");
             case "-":
                 if (this.peek() === "-") {
                     // Comment
@@ -64,7 +75,7 @@ class Tokenizer {
                     }
                     return;
                 } else {
-                    throw new Error("Unhandled token");
+                    return this.addToken("minus");
                 }
             case " ":
             case "\r":
@@ -80,7 +91,7 @@ class Tokenizer {
                     return this.identifier();
                 }
                 throw new Error(
-                    `Unexpected token at position ${this.position}`
+                    `Unexpected token at position ${this.position}: ${char}`
                 );
         }
     }

@@ -7,6 +7,8 @@ import {
 import { InsertStatement } from "./ast/insert";
 import {
     FromClause,
+    OrderByClause,
+    OrderByTerm,
     ResultColumn,
     SelectClause,
     SelectStatement,
@@ -137,15 +139,42 @@ class Parser {
         const selectClause = this.selectClause(); // Note: This consumes the FROM
         const fromClause = this.fromClause();
         const whereClause = this.match("where") ? this.expression() : undefined;
-
+        const orderByClause = this.match("order")
+            ? this.orderByClause()
+            : undefined;
         return {
             type: "select",
             selectClause,
             fromClause,
             whereClause,
+            orderByClause,
         };
     }
 
+    private orderByClause(): OrderByClause {
+        this.consume("by");
+        const orderBy: OrderByTerm[] = this.consumeList(() => {
+            const expression = this.expression();
+            let direction: "asc" | "desc" = "asc";
+            if (this.match("asc")) {
+                direction = "asc";
+            } else if (this.match("desc")) {
+                direction = "desc";
+            }
+            return {
+                expression,
+                direction,
+            };
+        }, "semicolon"); // A bit janky... Will need to revisit.
+
+        if (this.previous().type === "semicolon") {
+            this.position--; // Give it back in a state where others can actually parse.
+        }
+
+        return {
+            orderBy,
+        };
+    }
     private selectClause(): SelectClause {
         const columns = this.consumeList(() => this.resultColumn(), "from");
         return { columns };
@@ -184,7 +213,15 @@ class Parser {
     private equality(): Expression {
         const left = this.primary();
 
-        for (const tokenType of ["greaterThan", "equal"] as TokenType[]) {
+        for (const tokenType of [
+            "greaterThan",
+            "equal",
+            "lessThan",
+            "star",
+            "plus",
+            "slash",
+            "minus", // TODO: Actually pull these out so we get precedence.
+        ] as TokenType[]) {
             const operator = this.match(tokenType);
             if (operator) {
                 const right = this.expression();
@@ -200,13 +237,67 @@ class Parser {
     }
 
     private primary(): Expression {
+        if (this.match("case")) {
+            return this.caseExpression();
+        }
+
         if (this.match("literal")) {
             return { type: "value", value: this.previous().literal };
         }
         if (this.match("identifier")) {
             return { type: "columnName", name: this.previous().lexeme };
         }
+        if (this.match("leftParen")) {
+            if (this.match("select")) {
+                this.consume("select");
+                const selectStatement = this.selectStatement();
+                this.consume("rightParen");
+                return { type: "select", statement: selectStatement };
+            } else {
+                const expression = this.expression(); // Do I need a special grouping expression?
+                this.consume("rightParen");
+                return expression;
+            }
+        }
+        if (this.match("avg") || this.match("count")) {
+            this.consume("leftParen");
+            let argument: Expression | "star";
+            if (this.match("star")) {
+                argument = "star";
+            } else {
+                argument = this.expression();
+            }
+            this.consume("rightParen");
+            return {
+                type: "function",
+                argument: argument,
+                name: "avg",
+            };
+        }
         this.error(`Unhandled primary expression ${this.peekToken().type}`);
+    }
+
+    private caseExpression(): Expression {
+        const whenList = [];
+        let elseExpression;
+        while (this.match("when")) {
+            const when = this.expression();
+            this.consume("then");
+            const then = this.expression();
+            whenList.push({ when, then });
+        }
+
+        if (this.match("else")) {
+            elseExpression = this.expression();
+        }
+
+        this.consume("end");
+
+        return {
+            type: "case",
+            when: whenList,
+            else: elseExpression,
+        };
     }
 
     // UTILITIES
