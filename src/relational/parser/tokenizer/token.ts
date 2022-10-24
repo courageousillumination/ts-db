@@ -1,27 +1,56 @@
 type Keyword =
+    // Binary operations
+    | "and"
+    | "not"
+    | "or"
+    // Equality
+    | "equal"
+    | "lessThan"
+    | "greaterThan"
+    // Terms
+    | "plus"
+    | "minus"
+    // Factors
+    | "star"
+    | "slash"
+    // Case expressions
+    | "case"
+    | "when"
+    | "then"
+    | "else"
+    | "end"
+    // literals
+    | "literal"
+    // SELECT statements
     | "select"
     | "from"
-    | "insert"
-    | "into"
-    | "create"
-    | "table"
-    | "integer"
-    | "order"
-    | "by"
-    | "values"
     | "where"
-    | "set"
-    | "update"
-    | "asc"
-    | "desc"
-    | "limit"
-    | "case"
-    | "then"
-    | "when"
-    | "end"
-    | "else"
-    | "avg" // Functions as keywords is janky as all hell...
-    | "count";
+    | "group"
+    | "order"
+    | "by";
+// | "select"
+// | "from"
+// | "insert"
+// | "into"
+// | "create"
+// | "table"
+// | "integer"
+// | "order"
+// | "by"
+// | "values"
+// | "where"
+// | "set"
+// | "update"
+// | "asc"
+// | "desc"
+// | "limit"
+// | "case"
+// | "then"
+// | "when"
+// | "end"
+// | "else"
+// | "avg" // Functions as keywords is janky as all hell...
+// | "count";
 
 type SpecialCharacter =
     | "star"
