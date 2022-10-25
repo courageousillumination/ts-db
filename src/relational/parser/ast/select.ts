@@ -17,6 +17,7 @@ export interface SelectClause {
 
 export interface FromClause {
     table: string;
+    alias?: string;
 }
 
 export interface OrderByTerm {

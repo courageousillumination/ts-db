@@ -1,4 +1,4 @@
-import { ColumnType, CreateStatement } from "./ast/create";
+import { ColumnDefinition, CreateStatement, ColumnType } from "./ast/create";
 import { Expression, CaseExpression } from "./ast/expression";
 import { InsertStatement } from "./ast/insert";
 import {
@@ -60,12 +60,28 @@ abstract class BaseParser<T> {
         return null;
     }
 
+    /** Like match, but returns the first item in the array that matches. */
+    protected matchAny(types: TokenType[]) {
+        for (const type of types) {
+            const result = this.match(type);
+            if (result) {
+                return result;
+            }
+        }
+        return null;
+    }
+
     /** Look at the next token. */
     protected peek() {
         if (this.isAtEnd()) {
             return null;
         }
         return this.tokens[this.position];
+    }
+
+    /** Returns the previous token (makes some matching easier). */
+    protected previous() {
+        return this.tokens[this.position - 1];
     }
 
     /** Checks if the parser is at the end of the input */
@@ -105,16 +121,23 @@ export class ExpressionParser extends BaseParser<Expression> {
     }
 
     private expression(): Expression {
+        // TODO: I'm not 100% sure this is correct, but
+        // I think case has some of the lowest precedence
+        // (and doesn't really make sense in the precedence system?).
         if (this.match("case")) {
             return this.caseExpression();
         }
-        // Everything else after case follows parser
-        // precedence rules, starting with boolean logic.
+
         return this.booleanLogic();
     }
 
     /** Parses a case expression. */
     private caseExpression(): CaseExpression {
+        let initialExpression;
+        if (this.peek()?.type !== "when") {
+            initialExpression = this.expression();
+        }
+
         const when = this.consumeMany(() => {
             if (!this.match("when")) {
                 return null;
@@ -134,31 +157,100 @@ export class ExpressionParser extends BaseParser<Expression> {
         return {
             type: "case",
             when,
+            initial: initialExpression,
             else: elseExpr,
         };
     }
+
     /** Attempts to parse an OR expression. */
     private booleanLogic(): Expression {
-        const left = this.equality();
-        return this.binaryOperator(left, ["and", "or"]);
+        let expr = this.equality();
+        while (this.matchAny(["and", "or"])) {
+            const operator = this.previous();
+            const right = this.equality();
+            expr = {
+                type: "binary",
+                left: expr,
+                right,
+                operator: operator.type,
+            };
+        }
+        return expr;
     }
 
     /** Check for equality expressions. */
     private equality(): Expression {
-        const left = this.term();
-        return this.binaryOperator(left, ["equal", "lessThan", "greaterThan"]);
+        let expr = this.term();
+
+        // Check for the single ternary operator "BETWEEN"
+        if (
+            this.match("between") ||
+            // A bit of a janky way to detect not between
+            // And it doesn't even really work. TODO: Fix me.
+            (this.match("not") && this.match("between"))
+        ) {
+            const expression2 = this.term();
+            this.consume("and");
+            const expression3 = this.term();
+            return {
+                type: "ternary",
+                operator: "between",
+                expr1: expr,
+                expr2: expression2,
+                expr3: expression3,
+            };
+        }
+        while (
+            this.matchAny([
+                "equal",
+                "lessThan",
+                "greaterThan",
+                "lessThanEqual",
+                "greaterThanEqual",
+            ])
+        ) {
+            const operator = this.previous();
+            const right = this.term();
+            expr = {
+                type: "binary",
+                left: expr,
+                right,
+                operator: operator.type,
+            };
+        }
+        return expr;
     }
 
     /** Checks for terms (using + and binary -) */
     private term(): Expression {
-        const left = this.factor();
-        return this.binaryOperator(left, ["plus", "minus"]);
+        let expr = this.factor();
+        while (this.matchAny(["plus", "minus"])) {
+            const operator = this.previous();
+            const right = this.factor();
+            expr = {
+                type: "binary",
+                left: expr,
+                right,
+                operator: operator.type,
+            };
+        }
+        return expr;
     }
 
     /** Check for factors (binary using * and /) */
     private factor(): Expression {
-        const left = this.unary();
-        return this.binaryOperator(left, ["star", "slash"]);
+        let expr = this.unary();
+        while (this.matchAny(["star", "slash"])) {
+            const operator = this.previous();
+            const right = this.unary();
+            expr = {
+                type: "binary",
+                left: expr,
+                right,
+                operator: operator.type,
+            };
+        }
+        return expr;
     }
 
     /** Handles the unary operation `-` */
@@ -184,14 +276,49 @@ export class ExpressionParser extends BaseParser<Expression> {
 
         // Handle variable names
         if (token.type === "identifier") {
-            return { type: "variable", name: token.lexeme };
+            // Check for function calls
+            if (this.match("leftParen")) {
+                const argument: "star" | Expression = this.match("star")
+                    ? "star"
+                    : this.expression();
+                this.consume("rightParen");
+                return { type: "function", name: token.lexeme, argument };
+            }
+
+            // We now enter the column handling. Columns can have an optional
+            // table ahead of time. So check if the next token is a '.'. If so
+            // the token we have is the table and the next is a column
+            if (this.match("dot")) {
+                const column = this.consume("identifier");
+                return {
+                    type: "column",
+                    column: column.lexeme,
+                    table: token.lexeme,
+                };
+            } else {
+                return { type: "column", column: token.lexeme };
+            }
         }
 
         // Handle groupings
         if (token.type === "leftParen") {
+            if (this.peek()?.type === "select") {
+                const select = this.applySubParser(SelectStatementParser);
+                this.consume("rightParen");
+                return { type: "select", statement: select };
+            }
+
             const expression = this.expression();
             this.consume("rightParen");
             return expression;
+        }
+
+        // Handle exists (I'm not really sure where this should live...)
+        if (token.type === "exists") {
+            this.consume("leftParen");
+            const select = this.applySubParser(SelectStatementParser);
+            this.consume("rightParen");
+            return { type: "select", statement: select, exists: true };
         }
         // We don't know what to do with this token.
         this.error(`Unexpected primary token ${token.type}`);
@@ -200,11 +327,12 @@ export class ExpressionParser extends BaseParser<Expression> {
     /** Attempt to construct a binary expression using one of the given operators. */
     private binaryOperator(
         left: Expression,
-        operators: TokenType[]
+        operators: TokenType[],
+        getRight: () => Expression
     ): Expression {
         for (const operator of operators) {
             if (this.match(operator)) {
-                const right = this.expression();
+                const right = getRight();
                 return {
                     type: "binary",
                     left,
@@ -218,11 +346,15 @@ export class ExpressionParser extends BaseParser<Expression> {
     }
 }
 
+/** Parser for handling select statements. */
 export class SelectStatementParser extends BaseParser<SelectStatement> {
     protected parseInternal() {
         return this.selectStatement();
     }
 
+    /**
+     * Parses a select statement.
+     */
     private selectStatement(): SelectStatement {
         this.consume("select");
         const columns: ResultColumn[] = this.consumeMany(() => {
@@ -233,27 +365,121 @@ export class SelectStatementParser extends BaseParser<SelectStatement> {
             return { type: "expression", expression };
         }, "comma");
 
-        this.consume("from");
-        const table = this.tableName();
+        const fromClause = this.fromClause();
 
         let whereClause;
         if (this.match("where")) {
             whereClause = this.applySubParser(ExpressionParser);
         }
 
+        const orderByClause = this.orderByClause();
+
         return {
             type: "select",
             selectClause: {
                 columns,
             },
-            fromClause: { table },
+            fromClause,
             whereClause,
+            orderByClause,
+        };
+    }
+
+    /** handles an order by. */
+    private orderByClause(): OrderByClause | undefined {
+        if (!this.match("order")) {
+            return undefined;
+        }
+        this.match("by");
+        const terms: OrderByTerm[] = this.consumeMany(() => {
+            const expr = this.applySubParser(ExpressionParser);
+            return { expression: expr, direction: "asc" };
+        }, "comma");
+        return { orderBy: terms };
+    }
+
+    /** Parses the from clause with optional alias. */
+    private fromClause() {
+        this.consume("from");
+        const table = this.tableName();
+
+        const alias = this.match("as") ? this.consume("identifier") : undefined;
+        return {
+            table,
+            alias: alias?.lexeme,
         };
     }
 
     private tableName() {
         const token = this.consume("identifier");
         return token.lexeme;
+    }
+}
+
+export class InsertStatementParser extends BaseParser<InsertStatement> {
+    protected parseInternal() {
+        return this.insertStatement();
+    }
+
+    private insertStatement(): InsertStatement {
+        const insertClause = this.insertClause();
+        const valuesClause = this.valuesClause();
+
+        return {
+            type: "insert",
+            insertClause,
+            valuesClause,
+        };
+    }
+
+    /** Handles the inserrt clause of an insert statement. */
+    private insertClause() {
+        this.consume("insert");
+        this.consume("into");
+        const table = this.consume("identifier");
+        let columns;
+        if (this.match("leftParen")) {
+            columns = this.consumeMany(() => {
+                const token = this.consume("identifier");
+                return token.lexeme;
+            }, "comma");
+            this.consume("rightParen");
+        }
+        return { table: table.lexeme, columns };
+    }
+
+    /** Handles the values clause of an insert statement. */
+    private valuesClause() {
+        this.consume("values");
+        this.match("leftParen");
+        const values = this.consumeMany(() => {
+            return this.applySubParser(ExpressionParser);
+        }, "comma");
+        this.consume("rightParen");
+        return { values };
+    }
+}
+
+export class CreateStatementParser extends BaseParser<CreateStatement> {
+    protected parseInternal() {
+        return this.createStatement();
+    }
+
+    private createStatement(): CreateStatement {
+        this.consume("create");
+        this.consume("table");
+        const table = this.consume("identifier");
+        this.consume("leftParen");
+        const columns: ColumnDefinition[] = this.consumeMany(() => {
+            const name = this.consume("identifier");
+            const type = this.matchAny(["integer"]);
+            if (!type) {
+                this.error(`Unknown column type ${this.previous().lexeme}`);
+            }
+            return { name: name.lexeme, type: type.lexeme as ColumnType };
+        }, "comma");
+        this.consume("rightParen");
+        return { type: "create", table: table.lexeme, columns };
     }
 }
 
@@ -264,11 +490,17 @@ export class StatementParser extends BaseParser<Statement> {
         if (!token) {
             this.error("Unexpected end of input.");
         }
-        if (token.type === "select") {
-            return this.applySubParser(SelectStatementParser);
-        }
 
-        this.error(`Unexpected start of statement ${token.type}`);
+        switch (token.type) {
+            case "select":
+                return this.applySubParser(SelectStatementParser);
+            case "insert":
+                return this.applySubParser(InsertStatementParser);
+            case "create":
+                return this.applySubParser(CreateStatementParser);
+            default:
+                this.error(`Unexpected start of statement ${token.type}`);
+        }
     }
 }
 
@@ -276,347 +508,11 @@ export class StatementParser extends BaseParser<Statement> {
 export const parse = (input: string) => {
     const tokens = tokenize(input);
     const parser = new StatementParser(tokens, 0);
-    const { result } = parser.parse();
+    const { result, position } = parser.parse();
+    if (position < tokens.length) {
+        throw new Error(
+            `Parser did not consume all input; ending token ${position}`
+        );
+    }
     return result;
 };
-
-// /**
-//  * Parses a query string into a set of statements.
-//  * @param query
-//  */
-// export const parse = (query: string): Statement[] => {
-//     const tokens = tokenize(query);
-//     const parser = new Parser(tokens);
-//     return parser.parse();
-// };
-
-// class Parser {
-//     private position = 0;
-//     constructor(private readonly tokens: Token[]) {}
-
-//     public parse(): Statement[] {
-//         const statements: Statement[] = [];
-
-//         while (!this.isAtEnd()) {
-//             statements.push(this.statement());
-//             // All statements must end with a semi-colon
-//             this.consume("semicolon");
-//         }
-
-//         return statements;
-//     }
-
-//     /** Parses a full statement of any kind.*/
-//     public statement(): Statement {
-//         const token = this.consume();
-//         switch (token.type) {
-//             case "select":
-//                 return this.selectStatement();
-//             case "insert":
-//                 return this.insertStatement();
-//             case "create":
-//                 return this.createStatement();
-//             case "update":
-//                 return this.updateStatement();
-//             default: // Hacky....
-//                 // Try parsing as a simple expression statement.
-//                 this.position--;
-//                 return { type: "expression", expression: this.expression() };
-//         }
-//     }
-
-//     /**  */
-
-//     private updateStatement(): UpdateStatement {
-//         const table = this.table();
-//         this.consume("set");
-//         // Kind of janky that we need an end token here.
-//         const assignments = this.consumeList(() => {
-//             const columnName = this.columnName();
-//             this.consume("equal");
-//             const expression = this.expression();
-//             return { columnName, expression };
-//         }, "where");
-//         let where;
-//         if (this.previous().type === "where") {
-//             where = this.expression();
-//         }
-
-//         return { type: "update", table, assignments, whereClause: where };
-//     }
-
-//     private createStatement(): CreateStatement {
-//         this.consume("table");
-//         const table = this.table();
-//         this.consume("leftParen");
-//         const columns = this.consumeList(() => {
-//             const name = this.columnName();
-//             const type = this.columnType();
-//             return { name, type };
-//         }, "rightParen");
-//         return {
-//             type: "create",
-//             table,
-//             columns,
-//         };
-//     }
-
-//     private columnName() {
-//         const token = this.consume("identifier");
-//         return token.lexeme;
-//     }
-
-//     private columnType(): ColumnType {
-//         if (this.match("integer")) {
-//             return "integer";
-//         }
-//         this.error("Unknown column type");
-//         // if (this.match('string'))
-//     }
-
-//     private insertStatement(): InsertStatement {
-//         this.consume("into");
-//         const table = this.table();
-//         let columns;
-//         if (!this.match("values")) {
-//             this.consume("leftParen");
-//             columns = this.consumeList(() => {
-//                 const token = this.consume("identifier");
-//                 return token.lexeme;
-//             }, "rightParen");
-//             this.consume("values");
-//         }
-//         this.consume("leftParen");
-//         const values = this.consumeList(() => this.expression(), "rightParen");
-
-//         return {
-//             type: "insert",
-//             insertClause: {
-//                 table,
-//                 columns,
-//             },
-//             valuesClause: { values },
-//         };
-//     }
-
-//     /** Parses a select statement specifically. */
-//     private selectStatement(): SelectStatement {
-//         const selectClause = this.selectClause(); // Note: This consumes the FROM
-//         const fromClause = this.fromClause();
-//         const whereClause = this.match("where") ? this.expression() : undefined;
-//         const orderByClause = this.match("order")
-//             ? this.orderByClause()
-//             : undefined;
-//         return {
-//             type: "select",
-//             selectClause,
-//             fromClause,
-//             whereClause,
-//             orderByClause,
-//         };
-//     }
-
-//     private orderByClause(): OrderByClause {
-//         this.consume("by");
-//         const orderBy: OrderByTerm[] = this.consumeList(() => {
-//             const expression = this.expression();
-//             let direction: "asc" | "desc" = "asc";
-//             if (this.match("asc")) {
-//                 direction = "asc";
-//             } else if (this.match("desc")) {
-//                 direction = "desc";
-//             }
-//             return {
-//                 expression,
-//                 direction,
-//             };
-//         }, "semicolon"); // A bit janky... Will need to revisit.
-
-//         if (this.previous().type === "semicolon") {
-//             this.position--; // Give it back in a state where others can actually parse.
-//         }
-
-//         return {
-//             orderBy,
-//         };
-//     }
-//     private selectClause(): SelectClause {
-//         const columns = this.consumeList(() => this.resultColumn(), "from");
-//         return { columns };
-//     }
-
-//     /** A result column that belongs to a select clause. */
-//     private resultColumn(): ResultColumn {
-//         if (this.match("star")) {
-//             return { type: "wildcard" };
-//         }
-
-//         const expression = this.expression();
-//         return { type: "expression", expression };
-//     }
-
-//     private fromClause(): FromClause {
-//         const table = this.table();
-//         return { table };
-//     }
-
-//     private table(): string {
-//         const token = this.consume("identifier");
-//         return token.lexeme;
-//     }
-
-//     // Expression parsing
-
-//     /**
-//      * Parses an expression.
-//      * @returns
-//      */
-//     private expression(): Expression {
-//         return this.equality();
-//     }
-
-//     private equality(): Expression {
-//         const left = this.primary();
-
-//         for (const tokenType of [
-//             "greaterThan",
-//             "equal",
-//             "lessThan",
-//             "star",
-//             "plus",
-//             "slash",
-//             "minus", // TODO: Actually pull these out so we get precedence.
-//         ] as TokenType[]) {
-//             const operator = this.match(tokenType);
-//             if (operator) {
-//                 const right = this.expression();
-//                 return {
-//                     type: "binary",
-//                     left,
-//                     right,
-//                     operator: operator.lexeme,
-//                 };
-//             }
-//         }
-//         return left;
-//     }
-
-//     private primary(): Expression {
-//         if (this.match("case")) {
-//             return this.caseExpression();
-//         }
-
-//         if (this.match("literal")) {
-//             return { type: "value", value: this.previous().literal };
-//         }
-//         if (this.match("identifier")) {
-//             return { type: "columnName", name: this.previous().lexeme };
-//         }
-//         if (this.match("leftParen")) {
-//             if (this.match("select")) {
-//                 this.consume("select");
-//                 const selectStatement = this.selectStatement();
-//                 this.consume("rightParen");
-//                 return { type: "select", statement: selectStatement };
-//             } else {
-//                 const expression = this.expression(); // Do I need a special grouping expression?
-//                 this.consume("rightParen");
-//                 return expression;
-//             }
-//         }
-//         if (this.match("avg") || this.match("count")) {
-//             this.consume("leftParen");
-//             let argument: Expression | "star";
-//             if (this.match("star")) {
-//                 argument = "star";
-//             } else {
-//                 argument = this.expression();
-//             }
-//             this.consume("rightParen");
-//             return {
-//                 type: "function",
-//                 argument: argument,
-//                 name: "avg",
-//             };
-//         }
-//         this.error(`Unhandled primary expression ${this.peekToken().type}`);
-//     }
-
-//     private caseExpression(): Expression {
-//         const whenList = [];
-//         let elseExpression;
-//         while (this.match("when")) {
-//             const when = this.expression();
-//             this.consume("then");
-//             const then = this.expression();
-//             whenList.push({ when, then });
-//         }
-
-//         if (this.match("else")) {
-//             elseExpression = this.expression();
-//         }
-
-//         this.consume("end");
-
-//         return {
-//             type: "case",
-//             when: whenList,
-//             else: elseExpression,
-//         };
-//     }
-
-//     // UTILITIES
-
-//     /**
-//      * Parses a list of items, seperated by commas.
-//      * Returns the parsed syntax nodes
-//      */
-//     private consumeList<T>(getter: () => T, end: TokenType) {
-//         const results = [];
-//         while (!this.match(end) && !this.isAtEnd()) {
-//             results.push(getter());
-//             this.match("comma"); // Note: trailing comms allowed
-//         }
-//         return results;
-//     }
-
-//     /** Consumes a token, with optional type checking */
-//     private consume(tokenType?: TokenType) {
-//         if (this.isAtEnd()) {
-//             this.error("Unexpected end of input");
-//         }
-//         const token = this.tokens[this.position++];
-//         if (tokenType && token.type !== tokenType) {
-//             this.error(`Expected ${tokenType} but got ${token.type}`);
-//         }
-//         return token;
-//     }
-
-//     /** Look at the next token. */
-//     private peekToken(): Token {
-//         return this.tokens[this.position];
-//     }
-
-//     /** Look at the previous token. */
-//     private previous(): Token {
-//         return this.tokens[this.position - 1];
-//     }
-
-//     /** Consumes a token if and only if it matches. */
-//     private match(tokenType: TokenType): Token | null {
-//         if (!this.isAtEnd() && this.peekToken().type === tokenType) {
-//             return this.consume(tokenType);
-//         }
-//         return null;
-//     }
-
-//     /** Checks if we are at the end of parsing. */
-//     private isAtEnd() {
-//         return this.position >= this.tokens.length;
-//     }
-
-//     /** Throws an error. */
-//     private error(error: string): never {
-//         throw new Error(error);
-//     }
-// }

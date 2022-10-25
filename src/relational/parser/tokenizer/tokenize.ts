@@ -19,7 +19,6 @@ const KEYWORDS = [
     "when",
     "then",
     "end",
-    "avg",
     "where",
     "set",
     "update",
@@ -27,7 +26,12 @@ const KEYWORDS = [
     "desc",
     "else",
     "end",
-    "count",
+    "or",
+    "and",
+    "not",
+    "as",
+    "exists",
+    "between",
 ];
 
 class Tokenizer {
@@ -49,6 +53,8 @@ class Tokenizer {
         switch (char) {
             case "*":
                 return this.addToken("star");
+            case ".":
+                return this.addToken("dot");
             case ",":
                 return this.addToken("comma");
             case "(":
@@ -58,8 +64,16 @@ class Tokenizer {
             case ";":
                 return this.addToken("semicolon");
             case ">":
+                if (this.peek() === "=") {
+                    this.advance();
+                    return this.addToken("greaterThanEqual");
+                }
                 return this.addToken("greaterThan");
             case "<":
+                if (this.peek() === "=") {
+                    this.advance();
+                    return this.addToken("lessThanEqual");
+                }
                 return this.addToken("lessThan");
             case "=":
                 return this.addToken("equal");

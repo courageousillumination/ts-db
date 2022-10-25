@@ -12,7 +12,7 @@ describe("sqllogic", () => {
             .map((x) => x.replace(/\n/g, " ")); // Replace new lines for easier reading
 
         test.each(values)("parses %s", (value) => {
-            parse(value + ";");
+            parse(value);
         });
     });
 });

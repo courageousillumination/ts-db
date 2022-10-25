@@ -21,36 +21,27 @@ type Keyword =
     | "end"
     // literals
     | "literal"
+    // Nested SELECT
+    | "exists"
+    // between
+    | "between"
     // SELECT statements
     | "select"
     | "from"
     | "where"
     | "group"
     | "order"
-    | "by";
-// | "select"
-// | "from"
-// | "insert"
-// | "into"
-// | "create"
-// | "table"
-// | "integer"
-// | "order"
-// | "by"
-// | "values"
-// | "where"
-// | "set"
-// | "update"
-// | "asc"
-// | "desc"
-// | "limit"
-// | "case"
-// | "then"
-// | "when"
-// | "end"
-// | "else"
-// | "avg" // Functions as keywords is janky as all hell...
-// | "count";
+    | "by"
+    | "as"
+    // INSERT statements
+    | "insert"
+    | "values"
+    | "into"
+    // CREATE statements
+    | "create"
+    | "table"
+    | "integer"
+    | "string";
 
 type SpecialCharacter =
     | "star"
@@ -60,10 +51,13 @@ type SpecialCharacter =
     | "semicolon"
     | "equal"
     | "greaterThan"
+    | "greaterThanEqual"
     | "plus"
     | "slash"
     | "minus"
-    | "lessThan";
+    | "lessThan"
+    | "lessThanEqual"
+    | "dot";
 
 export type TokenType = Keyword | SpecialCharacter | "literal" | "identifier";
 
