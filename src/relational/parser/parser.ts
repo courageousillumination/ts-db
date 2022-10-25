@@ -323,27 +323,6 @@ export class ExpressionParser extends BaseParser<Expression> {
         // We don't know what to do with this token.
         this.error(`Unexpected primary token ${token.type}`);
     }
-
-    /** Attempt to construct a binary expression using one of the given operators. */
-    private binaryOperator(
-        left: Expression,
-        operators: TokenType[],
-        getRight: () => Expression
-    ): Expression {
-        for (const operator of operators) {
-            if (this.match(operator)) {
-                const right = getRight();
-                return {
-                    type: "binary",
-                    left,
-                    right,
-                    operator,
-                };
-            }
-        }
-        // No match found, so just return the left
-        return left;
-    }
 }
 
 /** Parser for handling select statements. */
@@ -352,9 +331,7 @@ export class SelectStatementParser extends BaseParser<SelectStatement> {
         return this.selectStatement();
     }
 
-    /**
-     * Parses a select statement.
-     */
+    /** Parses a select statement. */
     private selectStatement(): SelectStatement {
         this.consume("select");
         const columns: ResultColumn[] = this.consumeMany(() => {
@@ -483,9 +460,49 @@ export class CreateStatementParser extends BaseParser<CreateStatement> {
     }
 }
 
+export class UpdateStatementParser extends BaseParser<UpdateStatement> {
+    protected parseInternal(): UpdateStatement {
+        return this.updateStatement();
+    }
+
+    private updateStatement(): UpdateStatement {
+        this.consume("update");
+        const table = this.consume("identifier");
+        this.consume("set");
+        const assignments = this.consumeMany(() => {
+            const columnName = this.consume("identifier");
+            this.consume("equal");
+            const expression = this.applySubParser(ExpressionParser);
+            return { columnName: columnName.lexeme, expression };
+        }, "comma");
+        const whereClause = this.match("where")
+            ? this.applySubParser(ExpressionParser)
+            : undefined;
+
+        return {
+            type: "update",
+            table: table.lexeme,
+            assignments,
+            whereClause,
+        };
+    }
+}
+
 /** Parses any kind of statement. */
-export class StatementParser extends BaseParser<Statement> {
-    protected parseInternal(): Statement {
+export class StatementParser extends BaseParser<Statement[]> {
+    protected parseInternal(): Statement[] {
+        const statements = [];
+        while (!this.isAtEnd()) {
+            const statement = this.parseStatement();
+            statements.push(statement);
+            if (!this.isAtEnd()) {
+                this.consume("semicolon");
+            }
+        }
+        return statements;
+    }
+
+    private parseStatement() {
         const token = this.peek();
         if (!token) {
             this.error("Unexpected end of input.");
@@ -498,6 +515,8 @@ export class StatementParser extends BaseParser<Statement> {
                 return this.applySubParser(InsertStatementParser);
             case "create":
                 return this.applySubParser(CreateStatementParser);
+            case "update":
+                return this.applySubParser(UpdateStatementParser);
             default:
                 this.error(`Unexpected start of statement ${token.type}`);
         }

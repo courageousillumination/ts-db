@@ -16,7 +16,7 @@ describe("UPDATE statements", () => {
     describe("basic functionality", () => {
         it.only("sets a new value", async () => {
             await client.executeQuery(
-                'UPDATE table1 SET b = "test3" WHERE a = 2;'
+                'UPDATE table1 SET b = "test3" WHERE a = 2'
             );
             const result = await client.executeQuery("SELECT * FROM table1;");
             expect(result).toEqual([

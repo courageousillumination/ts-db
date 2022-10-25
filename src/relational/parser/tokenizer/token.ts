@@ -41,7 +41,10 @@ type Keyword =
     | "create"
     | "table"
     | "integer"
-    | "string";
+    | "string"
+    // UPDATE statements
+    | "update"
+    | "set";
 
 type SpecialCharacter =
     | "star"

@@ -9,7 +9,7 @@ describe("CREATE TABLE statements", () => {
 
     describe("basic functionality", () => {
         it("creates a new table that we can insert into", async () => {
-            await client.executeQuery("CREATE TABLE table1 (col1 INTEGER);");
+            await client.executeQuery("CREATE TABLE table1 (col1 INTEGER)");
             expect(await client.getTables()).toHaveLength(1);
         });
     });

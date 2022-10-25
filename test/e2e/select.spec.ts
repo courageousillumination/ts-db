@@ -15,14 +15,12 @@ describe("SELECT statements", () => {
 
     describe("SELECT clause", () => {
         it("loads columns and returns the values", async () => {
-            const result = await client.executeQuery("SELECT a FROM table1;");
+            const result = await client.executeQuery("SELECT a FROM table1");
             expect(result).toEqual([[1], [2]]);
         });
 
         it("respects column order", async () => {
-            const result = await client.executeQuery(
-                "SELECT b, a FROM table1;"
-            );
+            const result = await client.executeQuery("SELECT b, a FROM table1");
             expect(result).toEqual([
                 ["test1", 1],
                 ["test2", 2],
@@ -30,7 +28,7 @@ describe("SELECT statements", () => {
         });
 
         it("supports * select", async () => {
-            const result = await client.executeQuery("SELECT * FROM table1;");
+            const result = await client.executeQuery("SELECT * FROM table1");
             expect(result).toEqual([
                 [1, "test1"],
                 [2, "test2"],
@@ -39,7 +37,7 @@ describe("SELECT statements", () => {
 
         it("supports expressions", async () => {
             const result = await client.executeQuery(
-                "SELECT a > 1 FROM table1;"
+                "SELECT a > 1 FROM table1"
             );
             expect(result).toEqual([[false], [true]]);
         });
@@ -48,7 +46,7 @@ describe("SELECT statements", () => {
     describe("WHERE clause", () => {
         it("filters the results", async () => {
             const result = await client.executeQuery(
-                "SELECT a FROM table1 WHERE a > 1;"
+                "SELECT a FROM table1 WHERE a > 1"
             );
             expect(result).toEqual([[2]]);
         });

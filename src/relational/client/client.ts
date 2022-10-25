@@ -195,14 +195,14 @@ class RelationalClient {
         switch (expression.type) {
             case "value":
                 return expression.value;
-            case "columnName":
+            case "column":
                 if (!table) {
                     this.error("Not in a tabel context");
                 }
-                const index = findColumnIndex(table, expression.name);
+                const index = findColumnIndex(table, expression.column);
                 if (index === -1 || index === undefined) {
                     this.error(
-                        `Could not find column named ${expression.name}`
+                        `Could not find column named ${expression.column}`
                     );
                 }
                 return row[index];
@@ -219,9 +219,9 @@ class RelationalClient {
                 );
 
                 switch (expression.operator) {
-                    case ">":
+                    case "greaterThan":
                         return leftValue > rightValue;
-                    case "=":
+                    case "equal":
                         return leftValue === rightValue;
                     default:
                         this.error("Unhandle operation!");
