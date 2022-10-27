@@ -1,42 +1,40 @@
+// import { ColumnDefinition } from "../parser/ast/create";
+// import { RelationalLoadDataFormat } from "./data";
+
 import { ColumnDefinition } from "../parser/ast/create";
-import { RelationalLoadDataFormat } from "./data";
 
-export interface Table {
-    name: string;
-    columns: ColumnDefinition[];
-    data: unknown[][];
-}
+export class Table {
+    // Note that items are stored with JS objects.
+    private readonly data: Record<string, any>[] = [];
 
-export const createTable = (
-    name: string,
-    columns: ColumnDefinition[]
-): Table => {
-    return {
-        name,
-        columns,
-        data: [],
-    };
-};
+    constructor(
+        public readonly name: string,
+        private readonly columns: ColumnDefinition[]
+    ) {}
 
-export const findColumnIndex = (table: Table, columnName: string) => {
-    return table.columns.findIndex((x) => x.name === columnName);
-};
-
-export const createTableFromData = (
-    name: string,
-    data: RelationalLoadDataFormat
-): Table => {
-    const columns = Object.keys(data[0]).map((x): ColumnDefinition => {
-        if (typeof x === "number") {
-            return { name: x, type: "integer" };
-        } else {
-            return { name: x, type: "string" };
+    /** Insert a value into the table. */
+    public async insertValue(values: any[], columns?: string[]) {
+        const record: Record<string, any> = {};
+        const columnNames = columns || this.columns.map((x) => x.name);
+        for (let i = 0; i < columnNames.length; i++) {
+            record[columnNames[i]] = values[i];
         }
-    });
-    const transformedData = data.map((x) => columns.map((y) => x[y.name]));
-    return {
-        name,
-        columns,
-        data: transformedData,
-    };
-};
+        this.data.push(record);
+    }
+
+    /**
+     * Get a generator for the rows.
+     */
+    public getRows() {
+        return this.data.map((_, i) => i);
+    }
+
+    public getValue(rowId: number, column: string) {
+        return this.data[rowId][column];
+    }
+
+    /** Get some debugging information about a table. */
+    public debug() {
+        console.log(this.data);
+    }
+}
