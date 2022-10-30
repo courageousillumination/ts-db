@@ -1,13 +1,7 @@
-import { promises } from "fs";
 import promptSync from "prompt-sync";
 import { parse } from "../relational";
 import { Backend } from "../relational/backend/backend";
-import { RelationalClient } from "../relational/client";
-import { compile } from "../relational/compiler/compiler";
-import { printBytecode } from "../relational/compiler/debug";
-import { ExpressionParser } from "../relational/parser/parser";
-import { tokenize } from "../relational/parser/tokenizer";
-import { VM } from "../relational/vm/vm";
+import { Interpreter } from "../relational/engine/interpreter/interpreter";
 
 const PROMPT = promptSync();
 
@@ -29,7 +23,7 @@ const PROMPT = promptSync();
 // };
 
 const startRepl = async () => {
-    const client = new RelationalClient();
+    // const client = new RelationalClient();
     if (process.argv.length > 2) {
         const script = process.argv[2];
         // await executeScript(client, script);
@@ -37,24 +31,21 @@ const startRepl = async () => {
 
     let command = PROMPT("> ");
     const backend = new Backend();
-    const vm = new VM(backend);
+    const interpreter = new Interpreter(backend);
+
     while (command !== "exit") {
-        // const tokens = tokenize(command);
-        // const parser = new ExpressionParser(tokens, 0);
-        // const { result: parsed } = parser.parse();
         const parsed = parse(command);
         for (const statement of parsed) {
-            const bytecode = compile(statement, backend);
-            console.log(printBytecode(bytecode));
+            // prepare a statement for execution
+            interpreter.prepare(statement);
 
-            vm.loadBytecode(bytecode);
-            // Step until we run out of rows
-            let result = await vm.step();
-            while (result !== null) {
+            for (const result of interpreter.step()) {
+                // Log each row as it comes out
                 console.log(result);
-                result = await vm.step();
             }
-            vm.reset();
+
+            // Prepare for the next statement
+            interpreter.reset();
         }
 
         command = PROMPT("> ");

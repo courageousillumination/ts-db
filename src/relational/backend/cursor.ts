@@ -7,8 +7,8 @@ export class Cursor {
         this.position++;
     }
 
-    public canAdvance() {
-        return this.position < this.data.length - 1;
+    public hasData() {
+        return this.position < this.data.length;
     }
 
     public getColumn(index: number) {

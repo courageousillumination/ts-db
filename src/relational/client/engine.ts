@@ -46,58 +46,6 @@ export class Engine {
     }
 
     /** Evaluates an expression to a primative type */
-    public async evaluateExpression(expression: Expression): Promise<any> {
-        switch (expression.type) {
-            case "value":
-                return expression.value;
-            case "binary":
-                const operator = BINARY_OPERATORS[expression.operator];
-                if (!operator) {
-                    this.error(`Unknown operator ${expression.operator}`);
-                }
-                const left = await this.evaluateExpression(expression.left);
-                const right = await this.evaluateExpression(expression.right);
-                return operator(left, right);
-            case "unary":
-                const unaryOperator = UNARY_OPERATORS[expression.operator];
-                if (!unaryOperator) {
-                    this.error(`Unknown operator ${expression.operator}`);
-                }
-                const value = await this.evaluateExpression(
-                    expression.expression
-                );
-                return unaryOperator(value);
-            case "ternary":
-                if (expression.operator !== "between") {
-                    this.error(`Unknown operator ${expression.operator}`);
-                }
-                const expr1 = await this.evaluateExpression(expression.expr1);
-                const expr2 = await this.evaluateExpression(expression.expr2);
-                const expr3 = await this.evaluateExpression(expression.expr3);
-                return expr1 >= expr2 && expr1 <= expr3;
-            case "case":
-                const branches = expression.when;
-                for (const { when, then } of branches) {
-                    if (await this.evaluateExpression(when)) {
-                        return this.evaluateExpression(then);
-                    }
-                }
-                if (expression.else) {
-                    return this.evaluateExpression(expression.else);
-                }
-                // TODO: What happens if a case has no match and no else?
-                return null;
-            case "column":
-                return this.getColumnValue(expression.column);
-            case "select":
-                const v = await this.executeSelect(expression.statement);
-                return v[0][0]; // Just unwrap to the first value
-            case "function":
-            // TODO...
-            default:
-                this.error(`Unhandled expression type: ${expression.type}`);
-        }
-    }
 
     /** Execute a create statement. */
     private async executeCreate(statement: CreateStatement) {
