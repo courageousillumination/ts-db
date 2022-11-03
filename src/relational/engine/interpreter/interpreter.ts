@@ -1,3 +1,4 @@
+import exp from "constants";
 import { stat } from "fs";
 import { Backend } from "../../backend/backend";
 import { Cursor } from "../../backend/cursor";
@@ -5,6 +6,39 @@ import { Expression } from "../../parser/ast/expression";
 import { SelectStatement } from "../../parser/ast/select";
 import { Statement } from "../../parser/ast/statement";
 import { TokenType } from "../../parser/tokenizer";
+
+/** Checks if the expression will need an aggregate */
+const isAggregate = (expression: Expression): boolean => {
+    switch (expression.type) {
+        case "binary":
+            return (
+                isAggregate(expression.left) || isAggregate(expression.right)
+            );
+        case "unary":
+            return isAggregate(expression.expression);
+        case "ternary":
+            return (
+                isAggregate(expression.expr1) ||
+                isAggregate(expression.expr2) ||
+                isAggregate(expression.expr3)
+            );
+        case "value":
+        case "select":
+            return false;
+        case "case":
+            const expressions = [
+                expression.initial,
+                expression.else,
+                ...expression.when.map((x) => x.when),
+                ...expression.when.map((x) => x.then),
+            ].filter((x) => !!x);
+            return expressions.some((x) => isAggregate(x as Expression));
+        case "function":
+            return true;
+        default:
+            throw new Error("unhandeld expression type");
+    }
+};
 
 /** Binary operator tokens to JS functions. */
 const OPERATORS: Partial<Record<TokenType, (...args: any[]) => any>> = {
@@ -18,6 +52,11 @@ const OPERATORS: Partial<Record<TokenType, (...args: any[]) => any>> = {
 export class Interpreter {
     /** Statement currently being evaluated. */
     private statement?: Statement;
+    /** Aggregate accumulator. */
+    private aggregateAccumulator?: Map<any, any>;
+
+    /** If we should update accumulators. */
+    private isAccumulating: boolean = false;
     /** Current cursor, if any. */
     private cursor?: Cursor;
     /** Current table, if any. */
@@ -64,9 +103,50 @@ export class Interpreter {
      * Execute a select statement.
      * Returns a generator for each result row.
      */
-    private *executeSelect(statement: SelectStatement): Generator<unknown[]> {
+    private executeSelect(statement: SelectStatement) {
         // Set up the context
         this.tableName = statement.fromClause.table;
+        if (
+            statement.selectClause.columns.some(
+                (x) => x.type === "expression" && isAggregate(x.expression)
+            )
+        ) {
+            return this.executeAggregate(statement);
+        } else {
+            return this.executeNonAggregate(statement);
+        }
+    }
+
+    private *executeAggregate(statement: SelectStatement) {
+        this.aggregateAccumulator = new Map();
+        this.isAccumulating = true;
+
+        // Create a new cursor
+        this.cursor = this.backend.createCursor();
+
+        while (this.cursor.hasData()) {
+            // Note that this will update the aggregate accumulator.
+            statement.selectClause.columns.map((x) =>
+                x.type === "expression"
+                    ? this.evaluateExpression(x.expression)
+                    : null
+            );
+            this.cursor.next();
+        }
+        this.isAccumulating = false;
+
+        // One final pass to get the value of out the accumulators.
+        const result = statement.selectClause.columns.map((x) =>
+            x.type === "expression"
+                ? this.evaluateExpression(x.expression)
+                : null
+        );
+        yield result;
+    }
+
+    private *executeNonAggregate(
+        statement: SelectStatement
+    ): Generator<unknown[]> {
         // Create a new cursor
         this.cursor = this.backend.createCursor();
 
@@ -121,6 +201,34 @@ export class Interpreter {
                 return null;
             case "column":
                 return this.getColumn(expression.column, expression.table);
+            case "function":
+                if (expression.name === "count") {
+                    const value =
+                        this.aggregateAccumulator?.get(expression) || 0;
+                    if (this.isAccumulating) {
+                        this.aggregateAccumulator?.set(expression, value + 1);
+                        return value + 1;
+                    }
+                    return value;
+                }
+                if (expression.name === "sum") {
+                    const value =
+                        this.aggregateAccumulator?.get(expression) || 0;
+                    if (this.isAccumulating) {
+                        const newValue = this.evaluateExpression(
+                            expression.argument as Expression
+                        );
+
+                        this.aggregateAccumulator?.set(
+                            expression,
+                            value + newValue
+                        );
+                        return value + newValue;
+                    }
+                    return value;
+                } else {
+                    this.error(`Unknown function ${expression.name}`);
+                }
             default:
                 this.error(`Unhandled expression type: ${expression.type}`);
         }
