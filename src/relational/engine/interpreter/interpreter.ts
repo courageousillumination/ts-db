@@ -1,11 +1,33 @@
-import exp from "constants";
-import { stat } from "fs";
 import { Backend } from "../../backend/backend";
 import { Cursor } from "../../backend/cursor";
-import { Expression } from "../../parser/ast/expression";
+import { Expression, FunctionExpression } from "../../parser/ast/expression";
 import { SelectStatement } from "../../parser/ast/select";
 import { Statement } from "../../parser/ast/statement";
 import { TokenType } from "../../parser/tokenizer";
+
+/** Binary operator tokens to JS functions. */
+const OPERATORS: Partial<Record<TokenType, (...args: any[]) => any>> = {
+    star: (a, b) => a * b,
+    greaterThan: (a, b) => a > b,
+    plus: (a, b) => a + b,
+    minus: (a) => a * -1,
+};
+
+/** Aggregation functions. */
+const AGGREGATORS: Record<string, (a: any, b: any) => any> = {
+    sum: (a, b) => (a || 0) + b,
+    count: (a, _) => (a || 0) + 1,
+    avg: ([avg, count] = [0, 0], b = 0) => {
+        return [(avg * count) / (count + 1) + b / (count + 1), count + 1];
+    },
+};
+
+/** Get the value out of an aggregator. */
+const AGGREGATEOR_GET_VALUE: Record<string, (a: any) => any> = {
+    sum: (a) => a,
+    count: (a) => a,
+    avg: (a) => a[0],
+};
 
 /** Checks if the expression will need an aggregate */
 const isAggregate = (expression: Expression): boolean => {
@@ -23,6 +45,7 @@ const isAggregate = (expression: Expression): boolean => {
                 isAggregate(expression.expr3)
             );
         case "value":
+        case "column":
         case "select":
             return false;
         case "case":
@@ -38,14 +61,6 @@ const isAggregate = (expression: Expression): boolean => {
         default:
             throw new Error("unhandeld expression type");
     }
-};
-
-/** Binary operator tokens to JS functions. */
-const OPERATORS: Partial<Record<TokenType, (...args: any[]) => any>> = {
-    star: (a, b) => a * b,
-    greaterThan: (a, b) => a > b,
-    plus: (a, b) => a + b,
-    minus: (a) => a * -1,
 };
 
 /** A tree walk interpreter for TS-DB */
@@ -103,61 +118,39 @@ export class Interpreter {
      * Execute a select statement.
      * Returns a generator for each result row.
      */
-    private executeSelect(statement: SelectStatement) {
+    private *executeSelect(statement: SelectStatement): Generator<unknown[]> {
         // Set up the context
         this.tableName = statement.fromClause.table;
-        if (
-            statement.selectClause.columns.some(
-                (x) => x.type === "expression" && isAggregate(x.expression)
-            )
-        ) {
-            return this.executeAggregate(statement);
-        } else {
-            return this.executeNonAggregate(statement);
-        }
-    }
-
-    private *executeAggregate(statement: SelectStatement) {
+        // We'll start accumulating if any of our selects have an aggregate in them.
+        this.isAccumulating = statement.selectClause.columns.some(
+            (x) => x.type === "expression" && isAggregate(x.expression)
+        );
         this.aggregateAccumulator = new Map();
-        this.isAccumulating = true;
 
-        // Create a new cursor
+        // Create a new cursor to walk the table.
         this.cursor = this.backend.createCursor();
 
         while (this.cursor.hasData()) {
             // Note that this will update the aggregate accumulator.
-            statement.selectClause.columns.map((x) =>
-                x.type === "expression"
-                    ? this.evaluateExpression(x.expression)
-                    : null
-            );
-            this.cursor.next();
-        }
-        this.isAccumulating = false;
-
-        // One final pass to get the value of out the accumulators.
-        const result = statement.selectClause.columns.map((x) =>
-            x.type === "expression"
-                ? this.evaluateExpression(x.expression)
-                : null
-        );
-        yield result;
-    }
-
-    private *executeNonAggregate(
-        statement: SelectStatement
-    ): Generator<unknown[]> {
-        // Create a new cursor
-        this.cursor = this.backend.createCursor();
-
-        while (this.cursor.hasData()) {
             const results = statement.selectClause.columns.map((x) =>
                 x.type === "expression"
                     ? this.evaluateExpression(x.expression)
                     : null
             );
-            yield results;
+            if (!this.isAccumulating) {
+                yield results;
+            }
             this.cursor.next();
+        }
+
+        if (this.isAccumulating) {
+            this.isAccumulating = false;
+            const result = statement.selectClause.columns.map((x) =>
+                x.type === "expression"
+                    ? this.evaluateExpression(x.expression)
+                    : null
+            );
+            yield result;
         }
     }
 
@@ -202,36 +195,41 @@ export class Interpreter {
             case "column":
                 return this.getColumn(expression.column, expression.table);
             case "function":
-                if (expression.name === "count") {
-                    const value =
-                        this.aggregateAccumulator?.get(expression) || 0;
-                    if (this.isAccumulating) {
-                        this.aggregateAccumulator?.set(expression, value + 1);
-                        return value + 1;
-                    }
-                    return value;
-                }
-                if (expression.name === "sum") {
-                    const value =
-                        this.aggregateAccumulator?.get(expression) || 0;
-                    if (this.isAccumulating) {
-                        const newValue = this.evaluateExpression(
-                            expression.argument as Expression
-                        );
-
-                        this.aggregateAccumulator?.set(
-                            expression,
-                            value + newValue
-                        );
-                        return value + newValue;
-                    }
-                    return value;
-                } else {
-                    this.error(`Unknown function ${expression.name}`);
-                }
+                return this.applyAggregate(expression);
             default:
                 this.error(`Unhandled expression type: ${expression.type}`);
         }
+    }
+
+    /** Applies an aggregate function. */
+    private applyAggregate(expression: FunctionExpression): unknown {
+        const value = this.aggregateAccumulator?.get(expression);
+
+        const aggregator = AGGREGATORS[expression.name];
+        if (!aggregator) {
+            this.error(`Unknown function ${expression.name}`);
+        }
+
+        const getter = AGGREGATEOR_GET_VALUE[expression.name];
+        if (!getter) {
+            this.error(`Unknown getter ${expression.name}`);
+        }
+
+        if (!this.isAccumulating) {
+            return getter(value);
+        }
+        // TODO: Why is '*' valid for count?
+        if (expression.argument === "star" && expression.name !== "count") {
+            this.error("Incorrect number of arguments");
+        }
+        const parameter =
+            expression.argument === "star"
+                ? undefined
+                : this.evaluateExpression(expression.argument);
+
+        const newValue = aggregator(value, parameter);
+        this.aggregateAccumulator?.set(expression, newValue);
+        return getter(newValue);
     }
 
     /** Loads a column using the current cursor. */

@@ -282,7 +282,11 @@ export class ExpressionParser extends BaseParser<Expression> {
                     ? "star"
                     : this.expression();
                 this.consume("rightParen");
-                return { type: "function", name: token.lexeme, argument };
+                return {
+                    type: "function",
+                    name: token.lexeme.toLowerCase(),
+                    argument,
+                };
             }
 
             // We now enter the column handling. Columns can have an optional
