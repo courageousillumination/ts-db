@@ -6,6 +6,7 @@ import { Expression, FunctionExpression } from "../../parser/ast/expression";
 import { InsertStatement } from "../../parser/ast/insert";
 import { SelectStatement } from "../../parser/ast/select";
 import { Statement } from "../../parser/ast/statement";
+import { UpdateStatement } from "../../parser/ast/update";
 import { TokenType } from "../../parser/tokenizer";
 
 /** Binary operator tokens to JS functions. */
@@ -22,6 +23,7 @@ const OPERATORS: Partial<Record<TokenType, (...args: any[]) => any>> = {
     between: (a, b, c) => a >= b && a <= c,
     not: (a) => !a,
     greaterThanEqual: (a, b) => a >= b,
+    equal: (a, b) => a === b,
 };
 
 /** Aggregation functions. */
@@ -127,9 +129,38 @@ export class Interpreter {
                 return this.executeCreate(this.statement);
             case "insert":
                 return this.executeInsert(this.statement);
-
+            case "update":
+                return this.executeUpdate(this.statement);
             default:
                 this.error(`Unhandled statement: ${this.statement.type}`);
+        }
+    }
+
+    private *executeUpdate(statement: UpdateStatement) {
+        const table = statement.table;
+        const cursor = this.backend.createCursor(table);
+        this.openCursors[table] = cursor;
+
+        while (cursor.hasData()) {
+            if (statement.whereClause) {
+                const evalutaed = this.evaluateExpression(
+                    statement.whereClause
+                );
+                if (!evalutaed) {
+                    cursor.next();
+                    continue;
+                }
+            }
+
+            for (const assignment of statement.assignments) {
+                const index = this.backend.getColumnIndex(
+                    table,
+                    assignment.columnName
+                );
+                const value = this.evaluateExpression(assignment.expression);
+                cursor.writeColumn(index, value);
+            }
+            cursor.next();
         }
     }
 

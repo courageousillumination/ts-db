@@ -27,4 +27,8 @@ export class Cursor {
     public writeRecord(record: unknown[]) {
         this.data.push(record);
     }
+
+    public writeColumn(index: number, value: unknown) {
+        this.data[this.position][index] = value;
+    }
 }

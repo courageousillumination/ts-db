@@ -236,6 +236,7 @@ describe("parser", () => {
                         right: { type: "value", value: 2 },
                     },
                     expr3: { type: "value", value: 2 },
+                    isNegative: false,
                 });
             });
         });
