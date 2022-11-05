@@ -126,6 +126,8 @@ export class Interpreter {
             (x) => x.type === "expression" && isAggregate(x.expression)
         );
         this.aggregateAccumulator = new Map();
+        const requiresSort = !!statement.orderByClause;
+        const sortlist = [];
 
         // Create a new cursor to walk the table.
         this.cursor = this.backend.createCursor();
@@ -137,7 +139,9 @@ export class Interpreter {
                     ? this.evaluateExpression(x.expression)
                     : null
             );
-            if (!this.isAccumulating) {
+            if (requiresSort) {
+                sortlist.push(results);
+            } else if (!this.isAccumulating) {
                 yield results;
             }
             this.cursor.next();
@@ -151,6 +155,31 @@ export class Interpreter {
                     : null
             );
             yield result;
+        }
+
+        if (requiresSort) {
+            // Sort the remaining sort list
+            // Right now we only support order by with number expressions.
+            const sorted = sortlist.sort((a: any[], b: any[]) => {
+                for (const col of statement.orderByClause?.orderBy || []) {
+                    if (col.expression.type !== "value") {
+                        this.error("Only number order by are supported.");
+                    }
+                    const index = (col.expression.value as number) - 1;
+                    const left = col.direction === "asc" ? a[index] : b[index];
+                    const right = col.direction === "asc" ? b[index] : a[index];
+
+                    if (left < right) {
+                        return -1;
+                    } else if (left > right) {
+                        return 1;
+                    }
+                }
+                return 0;
+            });
+            for (const row of sorted) {
+                yield row;
+            }
         }
     }
 
@@ -196,8 +225,19 @@ export class Interpreter {
                 return this.getColumn(expression.column, expression.table);
             case "function":
                 return this.applyAggregate(expression);
+            case "select":
+                // This is super inefficent since it will be executed every time, but whatever...
+                const interpreter = new Interpreter(this.backend);
+                interpreter.prepare(expression.statement);
+                const result = interpreter.step().next().value;
+                if (Array.isArray(result)) {
+                    return result[0];
+                }
+                this.error("Idk, select went wrong...");
             default:
-                this.error(`Unhandled expression type: ${expression.type}`);
+                this.error(
+                    `Unhandled expression type: ${(expression as any).type}`
+                );
         }
     }
 

@@ -32,6 +32,8 @@ const KEYWORDS = [
     "as",
     "exists",
     "between",
+    "asc",
+    "desc",
 ];
 
 class Tokenizer {

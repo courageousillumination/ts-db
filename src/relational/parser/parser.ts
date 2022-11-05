@@ -374,7 +374,14 @@ export class SelectStatementParser extends BaseParser<SelectStatement> {
         this.match("by");
         const terms: OrderByTerm[] = this.consumeMany(() => {
             const expr = this.applySubParser(ExpressionParser);
-            return { expression: expr, direction: "asc" };
+            let direction: "asc" | "desc";
+            if (this.match("desc")) {
+                direction = "desc";
+            } else {
+                this.match("asc");
+                direction = "asc";
+            }
+            return { expression: expr, direction };
         }, "comma");
         return { orderBy: terms };
     }

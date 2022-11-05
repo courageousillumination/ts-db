@@ -33,6 +33,8 @@ type Keyword =
     | "order"
     | "by"
     | "as"
+    | "asc"
+    | "desc"
     // INSERT statements
     | "insert"
     | "values"
