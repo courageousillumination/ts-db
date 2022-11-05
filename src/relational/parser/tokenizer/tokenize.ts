@@ -1,39 +1,59 @@
-import { Token, TokenType, DebugToken } from "./token";
+import { SourcePosition } from "../debug/position";
+import { TokenType, DebugToken } from "./token";
 
 const isDigit = (x: string) => /^[0-9]+$/i.test(x);
 const isAlpha = (x: string) => /^[a-z]+$/i.test(x);
 const isAlphaNumeric = (x: string) => /^[a-z0-9]+$/i.test(x);
 
 const KEYWORDS = [
-    "select",
-    "from",
-    "into",
-    "insert",
-    "create",
-    "values",
-    "table",
-    "integer",
-    "order",
-    "by",
+    // Logical operators
+    "and",
+    "not",
+    "or",
+    // Equality
+    "equal",
+    "lessThan",
+    "greaterThan",
+    // Terms
+    "plus",
+    "minus",
+    // Factors
+    "star",
+    "slash",
+    // Case expressions
     "case",
     "when",
     "then",
-    "end",
-    "where",
-    "set",
-    "update",
-    "asc",
-    "desc",
     "else",
     "end",
-    "or",
-    "and",
-    "not",
-    "as",
+    // literals
+    "literal",
+    // Nested SELECT
     "exists",
+    // between
     "between",
+    // SELECT statements
+    "select",
+    "from",
+    "where",
+    "group",
+    "order",
+    "by",
+    "as",
     "asc",
     "desc",
+    // INSERT statements
+    "insert",
+    "values",
+    "into",
+    // CREATE statements
+    "create",
+    "table",
+    "integer",
+    "string",
+    // UPDATE statements
+    "update",
+    "set",
 ];
 
 class Tokenizer {
@@ -47,20 +67,20 @@ class Tokenizer {
     private line = 1;
 
     /** Characters within the line of the current position. */
-    private lineOffset = 1;
+    private character = 1;
 
     /**
      * Tracks where the current token starts
      * Position in the input string, line number, and character offset for the line.
      */
-    private tokenStart: [number, number, number] = [0, 0, 0];
+    private tokenStart: SourcePosition = { position: 0, line: 0, character: 0 };
 
     constructor(private readonly input: string) {}
 
     /** Tokenize the input string. */
     public tokenize(): DebugToken[] {
         while (!this.isAtEnd()) {
-            this.tokenStart = [this.position, this.line, this.lineOffset];
+            this.tokenStart = this.getSourcePosition();
             this.scanToken();
         }
         return this.tokens;
@@ -137,7 +157,10 @@ class Tokenizer {
         while (isAlphaNumeric(this.input[this.position]) && !this.isAtEnd()) {
             this.advance();
         }
-        const lexeme = this.input.slice(this.tokenStart[0], this.position);
+        const lexeme = this.input.slice(
+            this.tokenStart.position,
+            this.position
+        );
         if (KEYWORDS.includes(lexeme.toLowerCase())) {
             return this.addToken(lexeme.toLowerCase() as TokenType);
         } else {
@@ -161,21 +184,30 @@ class Tokenizer {
         this.advance(); // Consume the closing quote.
         return this.addToken(
             "literal",
-            this.input.slice(this.tokenStart[0] + 1, this.position - 1)
+            this.input.slice(this.tokenStart.position + 1, this.position - 1)
         );
     }
 
     /**
      * Consumes a number.
-     * TODO: Add support for decmial numbers.
      */
     private number() {
         while (isDigit(this.input[this.position]) && !this.isAtEnd()) {
             this.advance();
         }
+        // Check for the . for decimal numbers.
+        if (this.peek() === ".") {
+            this.advance();
+            while (isDigit(this.input[this.position]) && !this.isAtEnd()) {
+                this.advance();
+            }
+        }
+
         return this.addToken(
             "literal",
-            parseInt(this.input.slice(this.tokenStart[0], this.position))
+            parseFloat(
+                this.input.slice(this.tokenStart.position, this.position)
+            )
         );
     }
 
@@ -186,7 +218,7 @@ class Tokenizer {
 
     /** Advance to the next character. */
     private advance() {
-        this.lineOffset++;
+        this.character++;
         return this.input[this.position++];
     }
 
@@ -200,21 +232,29 @@ class Tokenizer {
         this.tokens.push({
             type,
             literal,
-            lexeme: this.input.slice(this.tokenStart[0], this.position),
-            line: this.tokenStart[1],
-            character: this.tokenStart[2],
-            positionStart: this.tokenStart[0],
-            positionEnd: this.position,
+            lexeme: this.input.slice(this.tokenStart.position, this.position),
+            start: this.tokenStart,
+            end: this.getSourcePosition(),
         });
     }
 
     /** Track that we've started a new line for debugging purposes */
     private nextLine() {
         this.line++;
-        this.lineOffset = 1;
+        this.character = 1;
+    }
+
+    /** Get the current source position. */
+    private getSourcePosition(): SourcePosition {
+        return {
+            position: this.position,
+            line: this.line,
+            character: this.character,
+        };
     }
 }
 
+/** Tokenizes an input string. */
 export const tokenize = (input: string): DebugToken[] => {
     const tokenizer = new Tokenizer(input);
     return tokenizer.tokenize();

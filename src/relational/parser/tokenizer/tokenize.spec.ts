@@ -45,6 +45,16 @@ describe("tokenize", () => {
                     }),
                 ]);
             });
+
+            it("parses a float", () => {
+                expect(tokenize("1.2")).toEqual([
+                    expect.objectContaining({
+                        type: "literal",
+                        lexeme: "1.2",
+                        literal: 1.2,
+                    }),
+                ]);
+            });
         });
     });
 
@@ -99,13 +109,17 @@ describe("tokenize", () => {
     describe("debug information", () => {
         it("includes information on tokens", () => {
             expect(tokenize(" 1")).toEqual([
-                expect.objectContaining({ line: 1, character: 2 }),
+                expect.objectContaining({
+                    start: { line: 1, character: 2, position: 1 },
+                }),
             ]);
         });
 
         it("counts lines", () => {
             expect(tokenize("\n\n 1")).toEqual([
-                expect.objectContaining({ line: 3, character: 2 }),
+                expect.objectContaining({
+                    start: { line: 3, character: 2, position: 3 },
+                }),
             ]);
         });
     });

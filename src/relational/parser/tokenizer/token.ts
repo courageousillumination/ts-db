@@ -1,3 +1,6 @@
+import { WithStartAndEnd } from "../debug/position";
+
+// Possible keywords
 type Keyword =
     // Binary operations
     | "and"
@@ -48,6 +51,7 @@ type Keyword =
     | "update"
     | "set";
 
+/** Special characters. */
 type SpecialCharacter =
     | "star"
     | "leftParen"
@@ -64,19 +68,22 @@ type SpecialCharacter =
     | "lessThanEqual"
     | "dot";
 
+/**
+ * Possible token types: keywords, special characters, identifiers, and literals.
+ */
 export type TokenType = Keyword | SpecialCharacter | "literal" | "identifier";
 
+/** A token interpreted from the source. */
 export type Token = {
+    /** Type of token. */
     type: TokenType;
+
+    /** Raw lexeme from the source. */
     lexeme: string;
+
+    /** Literal value (only if type === 'literal') */
     literal?: unknown;
 };
 
-/** Special tokens that include debug information. */
-export interface DebugToken extends Token {
-    line: number;
-    character: number;
-    // Raw position in the input string
-    positionStart: number;
-    positionEnd: number;
-}
+/** A token with debug information. */
+export type DebugToken = WithStartAndEnd<Token>;
