@@ -35,9 +35,9 @@ const AGGREGATORS: Record<string, (a: any, b: any) => any> = {
 
 /** Get the value out of an aggregator. */
 const AGGREGATEOR_GET_VALUE: Record<string, (a: any) => any> = {
-    sum: (a) => a,
-    count: (a) => a,
-    avg: (a) => a[0],
+    sum: (a) => a || 0,
+    count: (a) => a || 0,
+    avg: (a) => a[0] || 0,
 };
 
 const STANDARD_FUNCTIONS: Record<string, (a: any) => any> = {
@@ -87,14 +87,11 @@ export class Interpreter {
 
     /** If we should update accumulators. */
     private isAccumulating: boolean = false;
-    /** Current cursor, if any. */
-    private cursor?: Cursor;
-    /** Current table, if any. */
-    private tableName?: string;
 
-    private tableAliases: Record<string, string> = {};
-
-    public constructor(private readonly backend: Backend) {}
+    public constructor(
+        private readonly backend: Backend,
+        private openCursors: Record<string, Cursor> = {}
+    ) {}
 
     /**
      * Prepares a statement for execution.
@@ -108,10 +105,8 @@ export class Interpreter {
     /** Resets the interpreter for a new statement. */
     public reset() {
         this.statement = undefined;
-        this.tableName = undefined;
-        this.cursor = undefined;
-        this.tableAliases = {};
         this.isAccumulating = false;
+        this.openCursors = {};
     }
 
     /**
@@ -167,10 +162,12 @@ export class Interpreter {
      */
     private *executeSelect(statement: SelectStatement): Generator<unknown[]> {
         // Set up the context
-        this.tableName = statement.fromClause.table;
+        const tableName = statement.fromClause.table;
+        const cursor = this.backend.createCursor(tableName);
         if (statement.fromClause.alias) {
-            this.tableAliases[statement.fromClause.alias] =
-                statement.fromClause.table;
+            this.openCursors[statement.fromClause.alias] = cursor;
+        } else {
+            this.openCursors[tableName] = cursor;
         }
 
         // We'll start accumulating if any of our selects have an aggregate in them.
@@ -181,19 +178,7 @@ export class Interpreter {
         const requiresSort = !!statement.orderByClause;
         const sortlist = [];
 
-        // Create a new cursor to walk the table.
-        this.cursor = this.backend.createCursor(this.tableName);
-
-        while (this.cursor.hasData()) {
-            // Note that this will update the aggregate accumulator.
-            const results = statement.selectClause.columns.flatMap((x) =>
-                x.type === "expression"
-                    ? this.evaluateExpression(x.expression)
-                    : this.backend
-                          .getColumns(statement.fromClause.table)
-                          .map((_, i) => this.cursor?.getColumn(i))
-            );
-
+        while (cursor.hasData()) {
             // Check the where clause
             let isValid = false;
             if (statement.whereClause) {
@@ -203,6 +188,20 @@ export class Interpreter {
                 isValid = true;
             }
 
+            if (!isValid) {
+                cursor.next();
+                continue;
+            }
+
+            // Note that this will update the aggregate accumulator.
+            const results = statement.selectClause.columns.flatMap((x) =>
+                x.type === "expression"
+                    ? this.evaluateExpression(x.expression)
+                    : this.backend
+                          .getColumns(statement.fromClause.table)
+                          .map((x) => cursor.getColumn(x.name))
+            );
+
             if (isValid) {
                 if (requiresSort) {
                     sortlist.push(results);
@@ -210,7 +209,7 @@ export class Interpreter {
                     yield results;
                 }
             }
-            this.cursor.next();
+            cursor.next();
         }
 
         if (this.isAccumulating) {
@@ -268,12 +267,17 @@ export class Interpreter {
                     expression.expression
                 );
             case "ternary":
-                return this.evaluateOperator(
+                const value = this.evaluateOperator(
                     expression.operator,
                     expression.expr1,
                     expression.expr2,
                     expression.expr3
                 );
+                if (expression.isNegative) {
+                    return !value;
+                } else {
+                    return value;
+                }
 
             case "case":
                 const branches = expression.when;
@@ -301,7 +305,9 @@ export class Interpreter {
                 return this.applyFunction(expression);
             case "select":
                 // This is super inefficent since it will be executed every time, but whatever...
-                const interpreter = new Interpreter(this.backend);
+                const interpreter = new Interpreter(this.backend, {
+                    ...this.openCursors,
+                });
                 interpreter.prepare(expression.statement);
                 const result = interpreter.step().next().value;
                 if (Array.isArray(result)) {
@@ -362,28 +368,33 @@ export class Interpreter {
     }
 
     /** Loads a column using the current cursor. */
-    private getColumn(column: string, table?: string): unknown {
-        let tableName: string | undefined;
-        if (table && this.tableAliases[table]) {
-            tableName = this.tableAliases[table];
-        } else {
-            tableName = this.tableName;
-        }
-
+    private getColumn(column: string, tableName?: string): unknown {
+        // If we don't have a table name, try each of our
+        // open tables to see if we can find the appropriate cursor
+        const possibleNames = [];
         if (!tableName) {
-            this.error("Could not find table name");
+            for (const t of Object.keys(this.openCursors)) {
+                if (this.backend.getColumnIndex(t, column) !== -1) {
+                    possibleNames.push(t);
+                }
+            }
+        } else {
+            possibleNames.push(tableName);
         }
 
-        const columnIndex = this.backend.getColumnIndex(tableName, column);
-        return this.getCursor().getColumn(columnIndex);
-    }
-
-    /** Get the current cursor, with error checking. */
-    private getCursor() {
-        if (!this.cursor) {
-            this.error("No current cursor");
+        if (possibleNames.length === 0) {
+            this.error(`Could not find table named ${tableName}`);
+        } else if (possibleNames.length > 1) {
+            this.error(`Ambigous column ${column}`);
         }
-        return this.cursor;
+
+        const cursor = this.openCursors[possibleNames[0]];
+
+        if (!cursor) {
+            this.error("Could not find open cursor");
+        }
+
+        return cursor.getColumn(column);
     }
 
     /** Evaluate a single operator. */

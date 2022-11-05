@@ -189,6 +189,8 @@ export class ExpressionParser extends BaseParser<Expression> {
             // And it doesn't even really work. TODO: Fix me.
             (this.match("not") && this.match("between"))
         ) {
+            const isNegative = this.tokens[this.position - 2].type === "not";
+
             const expression2 = this.term();
             this.consume("and");
             const expression3 = this.term();
@@ -198,6 +200,7 @@ export class ExpressionParser extends BaseParser<Expression> {
                 expr1: expr,
                 expr2: expression2,
                 expr3: expression3,
+                isNegative,
             };
         }
         while (

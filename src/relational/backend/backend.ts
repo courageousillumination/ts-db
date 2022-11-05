@@ -15,15 +15,13 @@ export class Backend {
         this.tables.push({ name, columns, data: [] });
     }
     public createCursor(name: string) {
-        return new Cursor(this.getTableByName(name).data);
+        const table = this.getTableByName(name);
+        return new Cursor(table.data, table.columns);
     }
 
     public getColumnIndex(name: string, column: string) {
         const table = this.getTableByName(name);
         const index = table.columns.findIndex((x) => x.name === column);
-        if (index === -1) {
-            throw new Error(`Could not find column named ${column}`);
-        }
         return index;
     }
 

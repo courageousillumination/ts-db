@@ -19,39 +19,52 @@ const getQueryString = (record: SQLLogicRecord) => {
     return cleanSqlQuery(str);
 };
 
+const testFile = "./test/sqllogic/test-files/select1.sql";
+const records = loadTestsFromFile(testFile);
+const queriesAndStatements = records.map(getQueryString);
+const queries = records.filter((x) => x.type === "query").map(getQueryString);
+const statements = records
+    .filter((x) => x.type === "statement")
+    .map(getQueryString);
+
+/** Runs the All command as a promise. */
+const sqliteAll = (db: sqlite3.Database, input: string) => {
+    return new Promise((resolve) => {
+        db.all(input, (err, rows) => {
+            resolve(rows.map((x) => Object.values(x)));
+        });
+    });
+};
+
 describe("sqllogic", () => {
     describe("select1", () => {
-        let backend: Backend;
-        let client: RelationalClient;
-        let reference: sqlite3.Database;
-
-        const result = loadTestsFromFile(
-            "./test/sqllogic/test-files/select1.sql"
-        );
-        const values = result.map(getQueryString);
-
-        beforeAll(() => {
-            backend = new Backend();
-            client = new RelationalClient(backend);
-            reference = new sqlite3.Database(":memory:");
+        describe("parsing", () => {
+            test.each(queriesAndStatements)("parses %s", (x) => {
+                parse(x);
+            });
         });
 
-        test.each(values)("parses %s", (value) => {
-            parse(value);
-        });
+        describe("execution", () => {
+            let client: RelationalClient;
+            let reference: sqlite3.Database;
+            beforeAll(async () => {
+                // We start by priming with the statements. Since
+                // we're really testing the select logic, we don't have
+                // explicit tests for the statements.
+                const backend = new Backend();
+                client = new RelationalClient(backend);
+                reference = new sqlite3.Database(":memory:");
+                for (const statement of statements) {
+                    client.execute(statement);
+                    await sqliteAll(reference, statement);
+                }
+            });
 
-        it.only("executes script", async () => {
-            for (const value of values) {
-                console.log(value);
-                const result = client.execute(value);
-                const referenceResult = await new Promise((resolve) => {
-                    reference.all(value, (err, rows) => {
-                        resolve(rows.map((x) => Object.values(x)));
-                    });
-                });
-
+            test.each(queries)("executes %s", async (x) => {
+                const result = client.execute(x);
+                const referenceResult = await sqliteAll(reference, x);
                 expect(result).toEqual(referenceResult);
-            }
+            });
         });
     });
 });

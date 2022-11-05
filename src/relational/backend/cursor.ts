@@ -1,6 +1,11 @@
+import { ColumnDefinition } from "../parser/ast/create";
+
 export class Cursor {
     private position = 0;
-    constructor(private readonly data: unknown[][]) {}
+    constructor(
+        private readonly data: unknown[][],
+        private readonly columns: ColumnDefinition[]
+    ) {}
 
     /** Advance to the next row in the table. */
     public next() {
@@ -11,7 +16,11 @@ export class Cursor {
         return this.position < this.data.length;
     }
 
-    public getColumn(index: number) {
+    public getColumn(name: string) {
+        const index = this.columns.findIndex((x) => x.name === name);
+        if (index === -1) {
+            throw new Error("Could not find column");
+        }
         return this.data[this.position][index] || null;
     }
 

@@ -45,6 +45,9 @@ export interface TernaryExpression {
     expr1: Expression;
     expr2: Expression;
     expr3: Expression;
+
+    /** A hack to help capture NOT BETWEEN */
+    isNegative: boolean;
 }
 
 /** A single When/Then case in a CASE expression. */
