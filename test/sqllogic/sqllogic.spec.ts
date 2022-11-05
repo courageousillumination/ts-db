@@ -1,4 +1,8 @@
+import crypto from "crypto";
+import sqlite3 from "sqlite3";
+
 import { RelationalClient } from "../../src/relational";
+import { Backend } from "../../src/relational/backend/backend";
 import { parse } from "../../src/relational/parser/parser";
 import { loadTestsFromFile } from "./harness";
 import { SQLLogicRecord } from "./test-file-parser";
@@ -17,26 +21,36 @@ const getQueryString = (record: SQLLogicRecord) => {
 
 describe("sqllogic", () => {
     describe("select1", () => {
+        let backend: Backend;
+        let client: RelationalClient;
+        let reference: sqlite3.Database;
+
         const result = loadTestsFromFile(
-            "./test/sqllogic/test-files/select0.sql"
+            "./test/sqllogic/test-files/select1.sql"
         );
         const values = result.map(getQueryString);
+
+        beforeAll(() => {
+            backend = new Backend();
+            client = new RelationalClient(backend);
+            reference = new sqlite3.Database(":memory:");
+        });
 
         test.each(values)("parses %s", (value) => {
             parse(value);
         });
 
-        it("executes script", async () => {
-            const client = new RelationalClient();
-            for (const record of result) {
-                const result = await client.execute(getQueryString(record));
+        it.only("executes script", async () => {
+            for (const value of values) {
+                console.log(value);
+                const result = client.execute(value);
+                const referenceResult = await new Promise((resolve) => {
+                    reference.all(value, (err, rows) => {
+                        resolve(rows.map((x) => Object.values(x)));
+                    });
+                });
 
-                if (record.type === "statement") {
-                    // We don't have any expected failures right now.
-                    expect(record.expectedResult).toEqual("ok");
-                } else if (record.type === "query") {
-                    console.log(result);
-                }
+                expect(result).toEqual(referenceResult);
             }
         });
     });

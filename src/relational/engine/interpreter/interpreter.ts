@@ -1,3 +1,4 @@
+import exp from "constants";
 import { Backend } from "../../backend/backend";
 import { Cursor } from "../../backend/cursor";
 import { CreateStatement } from "../../parser/ast/create";
@@ -11,8 +12,16 @@ import { TokenType } from "../../parser/tokenizer";
 const OPERATORS: Partial<Record<TokenType, (...args: any[]) => any>> = {
     star: (a, b) => a * b,
     greaterThan: (a, b) => a > b,
+    lessThan: (a, b) => a < b,
+    lessThanEqual: (a, b) => a <= b,
     plus: (a, b) => a + b,
-    minus: (a) => a * -1,
+    minus: (a, b = null) => (b === null ? -a : a - b),
+    slash: (a, b) => a / b,
+    and: (a, b) => a && b,
+    or: (a, b) => a || b,
+    between: (a, b, c) => a >= b && a <= c,
+    not: (a) => !a,
+    greaterThanEqual: (a, b) => a >= b,
 };
 
 /** Aggregation functions. */
@@ -29,6 +38,10 @@ const AGGREGATEOR_GET_VALUE: Record<string, (a: any) => any> = {
     sum: (a) => a,
     count: (a) => a,
     avg: (a) => a[0],
+};
+
+const STANDARD_FUNCTIONS: Record<string, (a: any) => any> = {
+    abs: (a) => Math.abs(a),
 };
 
 /** Checks if the expression will need an aggregate */
@@ -59,7 +72,7 @@ const isAggregate = (expression: Expression): boolean => {
             ].filter((x) => !!x);
             return expressions.some((x) => isAggregate(x as Expression));
         case "function":
-            return true;
+            return !!AGGREGATORS[expression.name];
         default:
             throw new Error("unhandeld expression type");
     }
@@ -79,6 +92,8 @@ export class Interpreter {
     /** Current table, if any. */
     private tableName?: string;
 
+    private tableAliases: Record<string, string> = {};
+
     public constructor(private readonly backend: Backend) {}
 
     /**
@@ -95,6 +110,8 @@ export class Interpreter {
         this.statement = undefined;
         this.tableName = undefined;
         this.cursor = undefined;
+        this.tableAliases = {};
+        this.isAccumulating = false;
     }
 
     /**
@@ -151,6 +168,11 @@ export class Interpreter {
     private *executeSelect(statement: SelectStatement): Generator<unknown[]> {
         // Set up the context
         this.tableName = statement.fromClause.table;
+        if (statement.fromClause.alias) {
+            this.tableAliases[statement.fromClause.alias] =
+                statement.fromClause.table;
+        }
+
         // We'll start accumulating if any of our selects have an aggregate in them.
         this.isAccumulating = statement.selectClause.columns.some(
             (x) => x.type === "expression" && isAggregate(x.expression)
@@ -255,8 +277,16 @@ export class Interpreter {
 
             case "case":
                 const branches = expression.when;
+                let initial;
+                if (expression.initial) {
+                    initial = this.evaluateExpression(expression.initial);
+                }
                 for (const { when, then } of branches) {
-                    if (this.evaluateExpression(when)) {
+                    const whenValue = this.evaluateExpression(when);
+                    if (
+                        initial === whenValue ||
+                        (initial === undefined && whenValue)
+                    ) {
                         return this.evaluateExpression(then);
                     }
                 }
@@ -268,15 +298,23 @@ export class Interpreter {
             case "column":
                 return this.getColumn(expression.column, expression.table);
             case "function":
-                return this.applyAggregate(expression);
+                return this.applyFunction(expression);
             case "select":
                 // This is super inefficent since it will be executed every time, but whatever...
                 const interpreter = new Interpreter(this.backend);
                 interpreter.prepare(expression.statement);
                 const result = interpreter.step().next().value;
                 if (Array.isArray(result)) {
+                    if (expression.exists) {
+                        return true;
+                    }
                     return result[0];
                 }
+
+                if (expression.exists) {
+                    return false;
+                }
+
                 this.error("Idk, select went wrong...");
             default:
                 this.error(
@@ -286,7 +324,14 @@ export class Interpreter {
     }
 
     /** Applies an aggregate function. */
-    private applyAggregate(expression: FunctionExpression): unknown {
+    private applyFunction(expression: FunctionExpression): unknown {
+        const func = STANDARD_FUNCTIONS[expression.name];
+        if (func) {
+            return func(
+                this.evaluateExpression(expression.argument as Expression)
+            );
+        }
+
         const value = this.aggregateAccumulator?.get(expression);
 
         const aggregator = AGGREGATORS[expression.name];
@@ -318,7 +363,13 @@ export class Interpreter {
 
     /** Loads a column using the current cursor. */
     private getColumn(column: string, table?: string): unknown {
-        const tableName = table || this.tableName;
+        let tableName: string | undefined;
+        if (table && this.tableAliases[table]) {
+            tableName = this.tableAliases[table];
+        } else {
+            tableName = this.tableName;
+        }
+
         if (!tableName) {
             this.error("Could not find table name");
         }

@@ -92,8 +92,12 @@ statement ok
 INSERT INTO t1(e,d,c,b,a) VALUES(246,248,247,249,245)
 
 query I nosort
-SELECT CASE WHEN c>(SELECT avg(c) FROM t1) THEN a*2 ELSE b*10 END
+SELECT a, b, CASE a+1 WHEN b THEN 111 WHEN c THEN 222
+        WHEN d THEN 333  WHEN e THEN 444 ELSE 555 END
   FROM t1
+ WHERE d NOT BETWEEN 110 AND 150
+    OR c BETWEEN b-2 AND d+2
+    OR (e>c OR e<d)
  ORDER BY 1
 ----
 30 values hashing to 3c13dee48d9356ae19af2515e05e6b54
