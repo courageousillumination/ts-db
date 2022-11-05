@@ -1,27 +1,28 @@
-import exp from "constants";
 import { Backend } from "../../backend/backend";
 import { Cursor } from "../../backend/cursor";
-import { CreateStatement } from "../../parser/ast/create";
-import { Expression, FunctionExpression } from "../../parser/ast/expression";
-import { InsertStatement } from "../../parser/ast/insert";
-import { SelectStatement } from "../../parser/ast/select";
-import { Statement } from "../../parser/ast/statement";
-import { UpdateStatement } from "../../parser/ast/update";
-import { TokenType } from "../../parser/tokenizer";
+import { CreateNode } from "../../parser/ast/create";
+import {
+    ExpressionNode,
+    FunctionCallExpressionNode,
+    Operator,
+} from "../../parser/ast/expression";
+import { InsertNode } from "../../parser/ast/insert";
+import { SelectNode } from "../../parser/ast/select";
+import { StatementNode } from "../../parser/ast/statement";
+import { UpdateNode } from "../../parser/ast/update";
 
 /** Binary operator tokens to JS functions. */
-const OPERATORS: Partial<Record<TokenType, (...args: any[]) => any>> = {
-    star: (a, b) => a * b,
+const OPERATORS: Partial<Record<Operator, (...args: any[]) => any>> = {
+    multiply: (a, b) => a * b,
     greaterThan: (a, b) => a > b,
     lessThan: (a, b) => a < b,
     lessThanEqual: (a, b) => a <= b,
-    plus: (a, b) => a + b,
-    minus: (a, b = null) => (b === null ? -a : a - b),
-    slash: (a, b) => a / b,
+    add: (a, b) => a + b,
+    subtract: (a, b = null) => (b === null ? -a : a - b),
+    divide: (a, b) => a / b,
     and: (a, b) => a && b,
     or: (a, b) => a || b,
     between: (a, b, c) => a >= b && a <= c,
-    not: (a) => !a,
     greaterThanEqual: (a, b) => a >= b,
     equal: (a, b) => a === b,
 };
@@ -47,21 +48,11 @@ const STANDARD_FUNCTIONS: Record<string, (a: any) => any> = {
 };
 
 /** Checks if the expression will need an aggregate */
-const isAggregate = (expression: Expression): boolean => {
-    switch (expression.type) {
-        case "binary":
-            return (
-                isAggregate(expression.left) || isAggregate(expression.right)
-            );
-        case "unary":
-            return isAggregate(expression.expression);
-        case "ternary":
-            return (
-                isAggregate(expression.expr1) ||
-                isAggregate(expression.expr2) ||
-                isAggregate(expression.expr3)
-            );
-        case "value":
+const isAggregate = (expression: ExpressionNode): boolean => {
+    switch (expression.subType) {
+        case "operator":
+            expression.arguments.some(isAggregate);
+        case "literal-value":
         case "column":
         case "select":
             return false;
@@ -72,9 +63,9 @@ const isAggregate = (expression: Expression): boolean => {
                 ...expression.when.map((x) => x.when),
                 ...expression.when.map((x) => x.then),
             ].filter((x) => !!x);
-            return expressions.some((x) => isAggregate(x as Expression));
-        case "function":
-            return !!AGGREGATORS[expression.name];
+            return expressions.some((x) => isAggregate(x as ExpressionNode));
+        case "function-call":
+            return !!AGGREGATORS[expression.functionName];
         default:
             throw new Error("unhandeld expression type");
     }
@@ -83,7 +74,7 @@ const isAggregate = (expression: Expression): boolean => {
 /** A tree walk interpreter for TS-DB */
 export class Interpreter {
     /** Statement currently being evaluated. */
-    private statement?: Statement;
+    private statement?: StatementNode;
     /** Aggregate accumulator. */
     private aggregateAccumulator?: Map<any, any>;
 
@@ -100,7 +91,7 @@ export class Interpreter {
      * NOTE: No results will be returned until step
      * is called.
      */
-    public prepare(statement: Statement) {
+    public prepare(statement: StatementNode) {
         this.statement = statement;
     }
 
@@ -132,20 +123,20 @@ export class Interpreter {
             case "update":
                 return this.executeUpdate(this.statement);
             default:
-                this.error(`Unhandled statement: ${this.statement.type}`);
+                this.error(
+                    `Unhandled statement: ${(this.statement as any).type}`
+                );
         }
     }
 
-    private *executeUpdate(statement: UpdateStatement) {
+    private *executeUpdate(statement: UpdateNode) {
         const table = statement.table;
         const cursor = this.backend.createCursor(table);
         this.openCursors[table] = cursor;
 
         while (cursor.hasData()) {
-            if (statement.whereClause) {
-                const evalutaed = this.evaluateExpression(
-                    statement.whereClause
-                );
+            if (statement.where) {
+                const evalutaed = this.evaluateExpression(statement.where);
                 if (!evalutaed) {
                     cursor.next();
                     continue;
@@ -164,19 +155,19 @@ export class Interpreter {
         }
     }
 
-    private *executeCreate(statement: CreateStatement) {
+    private *executeCreate(statement: CreateNode) {
         this.backend.createTable(statement.table, statement.columns);
     }
 
-    private *executeInsert(statement: InsertStatement) {
-        const evaluated = statement.valuesClause.values.map((x) =>
+    private *executeInsert(statement: InsertNode) {
+        const evaluated = statement.values.map((x) =>
             this.evaluateExpression(x)
         );
-        const table = statement.insertClause.table;
+        const table = statement.table;
         let record: unknown[] = [];
-        if (statement.insertClause.columns) {
-            for (let i = 0; i < statement.insertClause.columns.length; i++) {
-                const name = statement.insertClause.columns[i];
+        if (statement.columns) {
+            for (let i = 0; i < statement.columns.length; i++) {
+                const name = statement.columns[i];
                 const index = this.backend.getColumnIndex(table, name);
                 record[index] = evaluated[i];
             }
@@ -191,29 +182,29 @@ export class Interpreter {
      * Execute a select statement.
      * Returns a generator for each result row.
      */
-    private *executeSelect(statement: SelectStatement): Generator<unknown[]> {
+    private *executeSelect(statement: SelectNode): Generator<unknown[]> {
         // Set up the context
-        const tableName = statement.fromClause.table;
+        const tableName = statement.table.tableName;
         const cursor = this.backend.createCursor(tableName);
-        if (statement.fromClause.alias) {
-            this.openCursors[statement.fromClause.alias] = cursor;
+        if (statement.table.alias) {
+            this.openCursors[statement.table.alias] = cursor;
         } else {
             this.openCursors[tableName] = cursor;
         }
 
         // We'll start accumulating if any of our selects have an aggregate in them.
-        this.isAccumulating = statement.selectClause.columns.some(
+        this.isAccumulating = statement.columns.some(
             (x) => x.type === "expression" && isAggregate(x.expression)
         );
         this.aggregateAccumulator = new Map();
-        const requiresSort = !!statement.orderByClause;
+        const requiresSort = !!statement.orderBy;
         const sortlist = [];
 
         while (cursor.hasData()) {
             // Check the where clause
             let isValid = false;
-            if (statement.whereClause) {
-                const value = this.evaluateExpression(statement.whereClause);
+            if (statement.where) {
+                const value = this.evaluateExpression(statement.where);
                 isValid = !!value;
             } else {
                 isValid = true;
@@ -225,11 +216,11 @@ export class Interpreter {
             }
 
             // Note that this will update the aggregate accumulator.
-            const results = statement.selectClause.columns.flatMap((x) =>
+            const results = statement.columns.flatMap((x) =>
                 x.type === "expression"
                     ? this.evaluateExpression(x.expression)
                     : this.backend
-                          .getColumns(statement.fromClause.table)
+                          .getColumns(statement.table.tableName)
                           .map((x) => cursor.getColumn(x.name))
             );
 
@@ -245,7 +236,7 @@ export class Interpreter {
 
         if (this.isAccumulating) {
             this.isAccumulating = false;
-            const result = statement.selectClause.columns.map((x) =>
+            const result = statement.columns.map((x) =>
                 x.type === "expression"
                     ? this.evaluateExpression(x.expression)
                     : null
@@ -257,8 +248,8 @@ export class Interpreter {
             // Sort the remaining sort list
             // Right now we only support order by with number expressions.
             const sorted = sortlist.sort((a: any[], b: any[]) => {
-                for (const col of statement.orderByClause?.orderBy || []) {
-                    if (col.expression.type !== "value") {
+                for (const col of statement.orderBy || []) {
+                    if (col.expression.subType !== "literal-value") {
                         this.error("Only number order by are supported.");
                     }
                     const index = (col.expression.value as number) - 1;
@@ -282,29 +273,16 @@ export class Interpreter {
     /**
      * Evaluates a single expression.
      */
-    public evaluateExpression(expression: Expression): unknown {
-        switch (expression.type) {
-            case "value":
+    public evaluateExpression(expression: ExpressionNode): unknown {
+        switch (expression.subType) {
+            case "literal-value":
                 return expression.value;
-            case "binary":
-                return this.evaluateOperator(
-                    expression.operator,
-                    expression.left,
-                    expression.right
-                );
-            case "unary":
-                return this.evaluateOperator(
-                    expression.operator,
-                    expression.expression
-                );
-            case "ternary":
+            case "operator":
                 const value = this.evaluateOperator(
                     expression.operator,
-                    expression.expr1,
-                    expression.expr2,
-                    expression.expr3
+                    ...expression.arguments
                 );
-                if (expression.isNegative) {
+                if (expression.negate) {
                     return !value;
                 } else {
                     return value;
@@ -331,8 +309,11 @@ export class Interpreter {
                 // TODO: What happens if a case has no match and no else?
                 return null;
             case "column":
-                return this.getColumn(expression.column, expression.table);
-            case "function":
+                return this.getColumn(
+                    expression.columnName,
+                    expression.tableName
+                );
+            case "function-call":
                 return this.applyFunction(expression);
             case "select":
                 // This is super inefficent since it will be executed every time, but whatever...
@@ -361,37 +342,32 @@ export class Interpreter {
     }
 
     /** Applies an aggregate function. */
-    private applyFunction(expression: FunctionExpression): unknown {
-        const func = STANDARD_FUNCTIONS[expression.name];
+    private applyFunction(expression: FunctionCallExpressionNode): unknown {
+        const func = STANDARD_FUNCTIONS[expression.functionName];
         if (func) {
-            return func(
-                this.evaluateExpression(expression.argument as Expression)
-            );
+            return func(this.evaluateExpression(expression.arguments[0]));
         }
 
         const value = this.aggregateAccumulator?.get(expression);
 
-        const aggregator = AGGREGATORS[expression.name];
+        const aggregator = AGGREGATORS[expression.functionName];
         if (!aggregator) {
-            this.error(`Unknown function ${expression.name}`);
+            this.error(`Unknown function ${expression.functionName}`);
         }
 
-        const getter = AGGREGATEOR_GET_VALUE[expression.name];
+        const getter = AGGREGATEOR_GET_VALUE[expression.functionName];
         if (!getter) {
-            this.error(`Unknown getter ${expression.name}`);
+            this.error(`Unknown getter ${expression.functionName}`);
         }
 
         if (!this.isAccumulating) {
             return getter(value);
         }
         // TODO: Why is '*' valid for count?
-        if (expression.argument === "star" && expression.name !== "count") {
-            this.error("Incorrect number of arguments");
-        }
-        const parameter =
-            expression.argument === "star"
-                ? undefined
-                : this.evaluateExpression(expression.argument);
+
+        const parameter = expression.wildcard
+            ? null
+            : this.evaluateExpression(expression.arguments[0]);
 
         const newValue = aggregator(value, parameter);
         this.aggregateAccumulator?.set(expression, newValue);
@@ -429,7 +405,7 @@ export class Interpreter {
     }
 
     /** Evaluate a single operator. */
-    private evaluateOperator(operator: TokenType, ...args: Expression[]) {
+    private evaluateOperator(operator: Operator, ...args: ExpressionNode[]) {
         const opFunction = OPERATORS[operator];
         if (!opFunction) {
             this.error(`Unknown operator ${operator}`);
