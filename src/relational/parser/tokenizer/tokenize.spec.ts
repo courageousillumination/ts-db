@@ -11,7 +11,9 @@ describe("tokenize", () => {
                 [";", "semicolon"],
             ];
             for (const [value, type] of specialMap) {
-                expect(tokenize(value)).toEqual([{ type, lexeme: value }]);
+                expect(tokenize(value)).toEqual([
+                    expect.objectContaining({ type, lexeme: value }),
+                ]);
             }
         });
     });
@@ -20,11 +22,11 @@ describe("tokenize", () => {
         describe("string literals", () => {
             it("parses a string literal", () => {
                 expect(tokenize('"foo select baz"')).toEqual([
-                    {
+                    expect.objectContaining({
                         type: "literal",
                         lexeme: '"foo select baz"',
                         literal: "foo select baz",
-                    },
+                    }),
                 ]);
             });
 
@@ -36,7 +38,11 @@ describe("tokenize", () => {
         describe("number literals", () => {
             it("parses an int", () => {
                 expect(tokenize("1")).toEqual([
-                    { type: "literal", lexeme: "1", literal: 1 },
+                    expect.objectContaining({
+                        type: "literal",
+                        lexeme: "1",
+                        literal: 1,
+                    }),
                 ]);
             });
         });
@@ -61,14 +67,14 @@ describe("tokenize", () => {
             ];
             for (const keyword of keywords) {
                 expect(tokenize(keyword)).toEqual([
-                    { type: keyword, lexeme: keyword },
+                    expect.objectContaining({ type: keyword, lexeme: keyword }),
                 ]);
             }
         });
 
         it("handles upper case versions", () => {
             expect(tokenize("SELECT")).toEqual([
-                { type: "select", lexeme: "SELECT" },
+                expect.objectContaining({ type: "select", lexeme: "SELECT" }),
             ]);
         });
     });
@@ -76,7 +82,10 @@ describe("tokenize", () => {
     describe("identifiers", () => {
         it("handles an identifier", () => {
             expect(tokenize("foobar")).toEqual([
-                { type: "identifier", lexeme: "foobar" },
+                expect.objectContaining({
+                    type: "identifier",
+                    lexeme: "foobar",
+                }),
             ]);
         });
     });
@@ -84,6 +93,20 @@ describe("tokenize", () => {
     describe("error handling", () => {
         it("throws on unexpected tokens", () => {
             expect(() => tokenize("\0")).toThrow();
+        });
+    });
+
+    describe("debug information", () => {
+        it("includes information on tokens", () => {
+            expect(tokenize(" 1")).toEqual([
+                expect.objectContaining({ line: 1, character: 2 }),
+            ]);
+        });
+
+        it("counts lines", () => {
+            expect(tokenize("\n\n 1")).toEqual([
+                expect.objectContaining({ line: 3, character: 2 }),
+            ]);
         });
     });
 });

@@ -71,3 +71,12 @@ export type Token = {
     lexeme: string;
     literal?: unknown;
 };
+
+/** Special tokens that include debug information. */
+export interface DebugToken extends Token {
+    line: number;
+    character: number;
+    // Raw position in the input string
+    positionStart: number;
+    positionEnd: number;
+}
