@@ -1,4 +1,5 @@
 import { RelationalClient } from "../../src/relational";
+import { Backend } from "../../src/relational/backend/backend";
 
 const DATA = [
     { a: 1, b: "test1" },
@@ -7,20 +8,29 @@ const DATA = [
 
 describe("SELECT statements", () => {
     let client: RelationalClient;
+    let backend: Backend;
 
     beforeEach(async () => {
-        client = new RelationalClient();
-        await client.loadData("table1", DATA);
+        backend = new Backend();
+        client = new RelationalClient(backend);
+
+        backend.createTable("table1", [
+            { name: "a", type: "integer" },
+            { name: "b", type: "string" },
+        ]);
+        const cursor = backend.createCursor("table1");
+        cursor.writeRecord([1, "test1"]);
+        cursor.writeRecord([2, "test2"]);
     });
 
     describe("SELECT clause", () => {
         it("loads columns and returns the values", async () => {
-            const result = await client.executeQuery("SELECT a FROM table1");
+            const result = client.execute("SELECT a FROM table1");
             expect(result).toEqual([[1], [2]]);
         });
 
         it("respects column order", async () => {
-            const result = await client.executeQuery("SELECT b, a FROM table1");
+            const result = client.execute("SELECT b, a FROM table1");
             expect(result).toEqual([
                 ["test1", 1],
                 ["test2", 2],
@@ -28,7 +38,7 @@ describe("SELECT statements", () => {
         });
 
         it("supports * select", async () => {
-            const result = await client.executeQuery("SELECT * FROM table1");
+            const result = client.execute("SELECT * FROM table1");
             expect(result).toEqual([
                 [1, "test1"],
                 [2, "test2"],
@@ -36,18 +46,14 @@ describe("SELECT statements", () => {
         });
 
         it("supports expressions", async () => {
-            const result = await client.executeQuery(
-                "SELECT a > 1 FROM table1"
-            );
+            const result = client.execute("SELECT a > 1 FROM table1");
             expect(result).toEqual([[false], [true]]);
         });
     });
 
     describe("WHERE clause", () => {
         it("filters the results", async () => {
-            const result = await client.executeQuery(
-                "SELECT a FROM table1 WHERE a > 1"
-            );
+            const result = client.execute("SELECT a FROM table1 WHERE a > 1");
             expect(result).toEqual([[2]]);
         });
     });

@@ -1,16 +1,19 @@
 import { RelationalClient } from "../../src/relational";
+import { Backend } from "../../src/relational/backend/backend";
 
 describe("CREATE TABLE statements", () => {
     let client: RelationalClient;
+    let backend: Backend;
 
     beforeEach(async () => {
-        client = new RelationalClient();
+        backend = new Backend();
+        client = new RelationalClient(backend);
     });
 
     describe("basic functionality", () => {
         it("creates a new table that we can insert into", async () => {
-            await client.executeQuery("CREATE TABLE table1 (col1 INTEGER)");
-            expect(await client.getTables()).toHaveLength(1);
+            client.execute("CREATE TABLE table1 (col1 INTEGER)");
+            expect(backend.getTableNames()).toHaveLength(1);
         });
     });
 });

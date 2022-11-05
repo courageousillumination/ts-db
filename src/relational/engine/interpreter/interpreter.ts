@@ -1,6 +1,8 @@
 import { Backend } from "../../backend/backend";
 import { Cursor } from "../../backend/cursor";
+import { CreateStatement } from "../../parser/ast/create";
 import { Expression, FunctionExpression } from "../../parser/ast/expression";
+import { InsertStatement } from "../../parser/ast/insert";
 import { SelectStatement } from "../../parser/ast/select";
 import { Statement } from "../../parser/ast/statement";
 import { TokenType } from "../../parser/tokenizer";
@@ -109,9 +111,37 @@ export class Interpreter {
         switch (this.statement.type) {
             case "select":
                 return this.executeSelect(this.statement);
+            case "create":
+                return this.executeCreate(this.statement);
+            case "insert":
+                return this.executeInsert(this.statement);
+
             default:
                 this.error(`Unhandled statement: ${this.statement.type}`);
         }
+    }
+
+    private *executeCreate(statement: CreateStatement) {
+        this.backend.createTable(statement.table, statement.columns);
+    }
+
+    private *executeInsert(statement: InsertStatement) {
+        const evaluated = statement.valuesClause.values.map((x) =>
+            this.evaluateExpression(x)
+        );
+        const table = statement.insertClause.table;
+        let record: unknown[] = [];
+        if (statement.insertClause.columns) {
+            for (let i = 0; i < statement.insertClause.columns.length; i++) {
+                const name = statement.insertClause.columns[i];
+                const index = this.backend.getColumnIndex(table, name);
+                record[index] = evaluated[i];
+            }
+        } else {
+            record = evaluated;
+        }
+        const cursor = this.backend.createCursor(table);
+        cursor.writeRecord(record);
     }
 
     /**
@@ -130,19 +160,33 @@ export class Interpreter {
         const sortlist = [];
 
         // Create a new cursor to walk the table.
-        this.cursor = this.backend.createCursor();
+        this.cursor = this.backend.createCursor(this.tableName);
 
         while (this.cursor.hasData()) {
             // Note that this will update the aggregate accumulator.
-            const results = statement.selectClause.columns.map((x) =>
+            const results = statement.selectClause.columns.flatMap((x) =>
                 x.type === "expression"
                     ? this.evaluateExpression(x.expression)
-                    : null
+                    : this.backend
+                          .getColumns(statement.fromClause.table)
+                          .map((_, i) => this.cursor?.getColumn(i))
             );
-            if (requiresSort) {
-                sortlist.push(results);
-            } else if (!this.isAccumulating) {
-                yield results;
+
+            // Check the where clause
+            let isValid = false;
+            if (statement.whereClause) {
+                const value = this.evaluateExpression(statement.whereClause);
+                isValid = !!value;
+            } else {
+                isValid = true;
+            }
+
+            if (isValid) {
+                if (requiresSort) {
+                    sortlist.push(results);
+                } else if (!this.isAccumulating) {
+                    yield results;
+                }
             }
             this.cursor.next();
         }

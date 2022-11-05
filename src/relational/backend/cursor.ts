@@ -14,4 +14,8 @@ export class Cursor {
     public getColumn(index: number) {
         return this.data[this.position][index] || null;
     }
+
+    public writeRecord(record: unknown[]) {
+        this.data.push(record);
+    }
 }
