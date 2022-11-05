@@ -1,37 +1,45 @@
-import { Expression } from "./expression";
+// import { Expression } from "./expression";
+import { BaseNode } from "./base-node";
+import { ExpressionNode } from "./expression";
 
+/** A result column that should be evaluated as an expression. */
 export interface ExpressionResultColumn {
     type: "expression";
-    expression: Expression;
+    expression: ExpressionNode;
 }
 
+/** A result column that is a wild card. */
 export interface WildCardResultColumn {
     type: "wildcard";
 }
 
+/** A result column is either a wildcard or an expression */
 export type ResultColumn = WildCardResultColumn | ExpressionResultColumn;
 
-export interface SelectClause {
-    columns: ResultColumn[];
-}
+/** Captures way to encode a table in the from statement. */
+export interface FromTable {
+    /** The real name of the table. */
+    tableName: string;
 
-export interface FromClause {
-    table: string;
+    /** Alias to apply to this table. */
     alias?: string;
 }
 
+/** A single term in the order by. */
 export interface OrderByTerm {
-    expression: Expression;
+    expression: ExpressionNode;
     direction?: "asc" | "desc";
 }
-export interface OrderByClause {
-    orderBy: OrderByTerm[];
-}
 
-export interface SelectStatement {
+/** Represents a select statement in the AST. */
+export interface SelectNode extends BaseNode {
     type: "select";
-    selectClause: SelectClause;
-    fromClause: FromClause;
-    whereClause?: Expression;
-    orderByClause?: OrderByClause;
+    /** Columns to select. */
+    columns: ResultColumn[];
+    /** The table to select from. */
+    table: FromTable;
+    /** Where clause */
+    where?: ExpressionNode;
+    /** Order by list. */
+    orderBy?: OrderByTerm[];
 }

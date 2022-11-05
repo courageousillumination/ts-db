@@ -1,121 +1,112 @@
-import { TokenType } from "../tokenizer";
-import { SelectStatement } from "./select";
+/** The AST nodes that make up expressions. */
+import { BaseNode } from "./base-node";
+import { SelectNode } from "./select";
 
-/** An expression that is a literal value. */
-export interface ValueExpression {
-    type: "value";
+/**
+ * All expressions use the base type "expression"
+ * and have a sub type to help identify what the node itself is.`
+ */
+interface BaseExpressionNode extends BaseNode {
+    type: "expression";
+}
 
-    /** Value (as a JS value.) */
+export type Operator =
+    | "negate"
+    | "multiply"
+    | "divide"
+    | "add"
+    | "subtract"
+    | "equal"
+    | "greaterThan"
+    | "greaterThanEqual"
+    | "lessThan"
+    | "lessThanEqual"
+    | "between"
+    | "and"
+    | "or";
+
+/** A node that has a literal value. */
+export interface LiteralValueExpresisonNode extends BaseExpressionNode {
+    subType: "literal-value";
+
+    /** The value stored by this expression. */
     value: unknown;
 }
 
-/** An expression with two sides and an operator. */
-export interface BinaryExpression {
-    type: "binary";
+/** When/Then pair. */
+export interface WhenThen {
+    /** When expression. */
+    when: ExpressionNode;
 
-    /** Left side of the expression. */
-    left: Expression;
-
-    /** Right side of the expression. */
-    right: Expression;
-
-    /** Operator will be a token type */
-    operator: TokenType;
+    /** Then expression */
+    then: ExpressionNode;
 }
 
-/** An expression with a single operator. */
-export interface UnaryExpression {
-    type: "unary";
+/** A node for handling case expressions. */
+export interface CaseExpressionNode extends BaseExpressionNode {
+    subType: "case";
 
-    /** The operator. */
-    operator: TokenType;
-
-    /** The expression to apply the operator over. */
-    expression: Expression;
-}
-
-/** An operator with three arguments (just BETWEEN) */
-export interface TernaryExpression {
-    type: "ternary";
-
-    /** The operator */
-    operator: TokenType;
-
-    /** All three expressions in order. */
-    expr1: Expression;
-    expr2: Expression;
-    expr3: Expression;
-
-    /** A hack to help capture NOT BETWEEN */
-    isNegative: boolean;
-}
-
-/** A single When/Then case in a CASE expression. */
-export interface CaseWhen {
-    /** Expression for evaluating the condition. */
-    when: Expression;
-
-    /** Resulting expression. */
-    then: Expression;
-}
-
-/** A CASE expression with When/Then pairs and an optional ELSE. */
-export interface CaseExpression {
-    type: "case";
     /** When/Then pairs. */
-    when: CaseWhen[];
+    when: WhenThen[];
 
-    /**
-     * Initial expression that should be compared against all cases.
-     * If omitted cases are checked for truthiness.
-     */
-    initial?: Expression;
+    /** Initial expression. */
+    initial?: ExpressionNode;
 
     /** Else expression. */
-    else?: Expression;
+    else?: ExpressionNode;
 }
 
-/**
- * Represents a column (optional table)
- */
-export interface ColumnExpression {
-    type: "column";
-
-    /** Column name. */
-    column: string;
-
-    /** Optional table where this column exists. */
-    table?: string;
+/** Expression nodes that involve an operator (unary, binary, and ternary) */
+export interface OperatorExpressionNode extends BaseExpressionNode {
+    subType: "operator";
+    /** The operator to apply */
+    operator: Operator;
+    /** Arguments to apply to the operator. */
+    arguments: ExpressionNode[];
+    /** Whether the operator should be negated (at the same precedence). */
+    negate?: boolean;
 }
 
-/**
- * Represents a function call expression.
- * Can have a single argument which is either an expression
- * or the `*` special.
- */
-export interface FunctionExpression {
-    type: "function";
-    name: string;
-    argument: Expression | "star";
+/** Expressions for a single column lookup. */
+export interface ColumnExpressionNode extends BaseExpressionNode {
+    subType: "column";
+    /** Name of the column. */
+    columnName: string;
+    /** Name of the table. */
+    tableName?: string;
 }
 
-/** Represents a nested select statement. */
-export interface SelectStatementExpression {
-    type: "select";
+/** A function call expression. */
+export interface FunctionCallExpressionNode extends BaseExpressionNode {
+    subType: "function-call";
 
-    /** Is this checking for existence? */
+    /** Name of the function to call */
+    functionName: string;
+
+    /** Arguments to the function. */
+    arguments: ExpressionNode[];
+
+    /** Is this function applied to wildcards. */
+    wildcard?: boolean;
+
+    /** Whether this function should use distinct. */
+    distinct?: boolean;
+}
+
+export interface SelectExpressionNode extends BaseExpressionNode {
+    subType: "select";
+
+    /** The select statement to evaluate. */
+    statement: SelectNode;
+
+    /** Should this just be checked for existence. */
     exists?: boolean;
-
-    /** The select statement to be executed. */
-    statement: SelectStatement;
 }
 
-export type Expression =
-    | ValueExpression
-    | BinaryExpression
-    | ColumnExpression
-    | TernaryExpression
-    | CaseExpression
-    | UnaryExpression
-    | FunctionExpression
-    | SelectStatementExpression;
+export type ExpressionNode =
+    | LiteralValueExpresisonNode
+    | OperatorExpressionNode
+    | CaseExpressionNode
+    | ColumnExpressionNode
+    | FunctionCallExpressionNode
+    | SelectExpressionNode;

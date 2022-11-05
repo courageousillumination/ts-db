@@ -42,6 +42,7 @@ const KEYWORDS = [
     "as",
     "asc",
     "desc",
+    "distinct",
     // INSERT statements
     "insert",
     "values",

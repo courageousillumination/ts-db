@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { DebugToken, parse, tokenize } from "../relational";
-// import { tokenize } from "../relational/parser";
 
 const checkedParse = (input: string) => {
     try {
@@ -84,8 +83,8 @@ export function App() {
                                 key={i}
                                 onClick={() => {
                                     setInputHighlight([
-                                        token.positionStart,
-                                        token.positionEnd,
+                                        token.start.position,
+                                        token.end.position,
                                     ]);
                                     setTokenHighlight(i);
                                 }}

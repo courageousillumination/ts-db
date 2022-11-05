@@ -38,6 +38,7 @@ type Keyword =
     | "as"
     | "asc"
     | "desc"
+    | "distinct"
     // INSERT statements
     | "insert"
     | "values"
