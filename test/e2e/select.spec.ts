@@ -57,4 +57,21 @@ describe("SELECT statements", () => {
             expect(result).toEqual([[2]]);
         });
     });
+
+    describe("comma joins", () => {
+        beforeEach(() => {
+            backend.createTable("table2", [
+                { name: "a", type: "integer" },
+                { name: "b", type: "string" },
+            ]);
+            const cursor = backend.createCursor("table2");
+            cursor.writeRecord([2, "table2 test1"]);
+            cursor.writeRecord([4, "table2 test2"]);
+        });
+
+        it("creates the cross product", () => {
+            const result = client.execute("SELECT * FROM table1, table2");
+            expect(result).toHaveLength(4);
+        });
+    });
 });

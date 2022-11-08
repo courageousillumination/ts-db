@@ -37,7 +37,7 @@ export interface SelectNode extends BaseNode {
     /** Columns to select. */
     columns: ResultColumn[];
     /** The table to select from. */
-    table: FromTable;
+    tables: FromTable[];
     /** Where clause */
     where?: ExpressionNode;
     /** Order by list. */

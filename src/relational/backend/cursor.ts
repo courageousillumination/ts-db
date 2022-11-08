@@ -12,6 +12,14 @@ export class Cursor {
         this.position++;
     }
 
+    public rewind() {
+        this.position = 0;
+    }
+
+    public getRow() {
+        return this.data[this.position];
+    }
+
     public hasData() {
         return this.position < this.data.length;
     }

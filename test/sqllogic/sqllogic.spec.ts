@@ -14,18 +14,11 @@ const cleanSqlQuery = (x: string) =>
         .filter((x) => x.trim().length)
         .join(" ");
 
+/** Get the query string from a record. */
 const getQueryString = (record: SQLLogicRecord) => {
     const str = record.type === "query" ? record.query : record.statement;
     return cleanSqlQuery(str);
 };
-
-const testFile = "./test/sqllogic/test-files/select1.sql";
-const records = loadTestsFromFile(testFile);
-const queriesAndStatements = records.map(getQueryString);
-const queries = records.filter((x) => x.type === "query").map(getQueryString);
-const statements = records
-    .filter((x) => x.type === "statement")
-    .map(getQueryString);
 
 /** Runs the All command as a promise. */
 const sqliteAll = (db: sqlite3.Database, input: string) => {
@@ -36,8 +29,27 @@ const sqliteAll = (db: sqlite3.Database, input: string) => {
     });
 };
 
+const FILE_BASE = "./test/sqllogic/test-files/";
+
+const testFiles = [
+    "select1.sql",
+    // Select5 works in theory, but it is super slow because of the
+    // way the code is set up. Some optimizations might be needed.
+
+    // "select5.sql",
+];
+
 describe("sqllogic", () => {
-    describe("select1", () => {
+    describe.each(testFiles)("%s", (testFile) => {
+        const records = loadTestsFromFile(FILE_BASE + testFile);
+        const queriesAndStatements = records.map(getQueryString);
+        const queries = records
+            .filter((x) => x.type === "query")
+            .map(getQueryString);
+        const statements = records
+            .filter((x) => x.type === "statement")
+            .map(getQueryString);
+
         describe("parsing", () => {
             test.each(queriesAndStatements)("parses %s", (x) => {
                 parse(x);
@@ -61,6 +73,7 @@ describe("sqllogic", () => {
             });
 
             test.each(queries)("executes %s", async (x) => {
+                console.log(x);
                 const result = client.execute(x);
                 const referenceResult = await sqliteAll(reference, x);
                 expect(result).toEqual(referenceResult);

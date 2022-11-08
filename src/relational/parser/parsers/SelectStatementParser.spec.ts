@@ -46,9 +46,11 @@ describe("SelectStatementParser", () => {
             const result = parseSelect("SELECT * from table1");
             expect(result).toEqual(
                 expect.objectContaining({
-                    table: {
-                        tableName: "table1",
-                    },
+                    tables: [
+                        {
+                            tableName: "table1",
+                        },
+                    ],
                 })
             );
         });
@@ -57,10 +59,28 @@ describe("SelectStatementParser", () => {
             const result = parseSelect("SELECT * from table1 as x");
             expect(result).toEqual(
                 expect.objectContaining({
-                    table: {
-                        tableName: "table1",
-                        alias: "x",
-                    },
+                    tables: [
+                        {
+                            tableName: "table1",
+                            alias: "x",
+                        },
+                    ],
+                })
+            );
+        });
+
+        it("parses a list of tables (comma joins)", () => {
+            const result = parseSelect("SELECT * from table1, table2");
+            expect(result).toEqual(
+                expect.objectContaining({
+                    tables: [
+                        {
+                            tableName: "table1",
+                        },
+                        {
+                            tableName: "table2",
+                        },
+                    ],
                 })
             );
         });

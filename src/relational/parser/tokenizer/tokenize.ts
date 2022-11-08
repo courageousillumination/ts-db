@@ -52,6 +52,9 @@ const KEYWORDS = [
     "table",
     "integer",
     "string",
+    "primary",
+    "key",
+    "varchar",
     // UPDATE statements
     "update",
     "set",
@@ -139,7 +142,8 @@ class Tokenizer {
             case "\t":
                 break; // Ignore white space
             case '"':
-                return this.string();
+            case "'": // Both kind of quotes are just parsed a string literals.
+                return this.string(char);
             default:
                 if (isDigit(char)) {
                     return this.number();
@@ -170,8 +174,8 @@ class Tokenizer {
     }
 
     /** Tokenizes a string literal. */
-    private string() {
-        while (this.input[this.position] !== '"' && !this.isAtEnd()) {
+    private string(starter: string) {
+        while (this.input[this.position] !== starter && !this.isAtEnd()) {
             const char = this.advance();
             if (char === "\n") {
                 this.nextLine();

@@ -184,12 +184,17 @@ export class Interpreter {
      */
     private *executeSelect(statement: SelectNode): Generator<unknown[]> {
         // Set up the context
-        const tableName = statement.table.tableName;
-        const cursor = this.backend.createCursor(tableName);
-        if (statement.table.alias) {
-            this.openCursors[statement.table.alias] = cursor;
-        } else {
-            this.openCursors[tableName] = cursor;
+
+        const cursors: Cursor[] = [];
+        for (const table of statement.tables) {
+            const tableName = table.tableName;
+            const cursor = this.backend.createCursor(tableName);
+            if (table.alias) {
+                this.openCursors[table.alias] = cursor;
+            } else {
+                this.openCursors[tableName] = cursor;
+            }
+            cursors.push(cursor);
         }
 
         // We'll start accumulating if any of our selects have an aggregate in them.
@@ -200,38 +205,34 @@ export class Interpreter {
         const requiresSort = !!statement.orderBy;
         const sortlist = [];
 
-        while (cursor.hasData()) {
-            // Check the where clause
-            let isValid = false;
-            if (statement.where) {
-                const value = this.evaluateExpression(statement.where);
-                isValid = !!value;
-            } else {
-                isValid = true;
-            }
-
-            if (!isValid) {
-                cursor.next();
-                continue;
-            }
-
-            // Note that this will update the aggregate accumulator.
-            const results = statement.columns.flatMap((x) =>
-                x.type === "expression"
-                    ? this.evaluateExpression(x.expression)
-                    : this.backend
-                          .getColumns(statement.table.tableName)
-                          .map((x) => cursor.getColumn(x.name))
-            );
-
+        // Loop until the last cursor has no more data.
+        while (cursors[cursors.length - 1].hasData()) {
+            // First check if this current row is going to be vaild
+            const isValid = statement.where
+                ? !!this.evaluateExpression(statement.where)
+                : true;
             if (isValid) {
+                const row = statement.columns.flatMap((x) =>
+                    x.type === "expression"
+                        ? this.evaluateExpression(x.expression)
+                        : cursors.flatMap((c) => c.getRow())
+                );
                 if (requiresSort) {
-                    sortlist.push(results);
+                    sortlist.push(row);
                 } else if (!this.isAccumulating) {
-                    yield results;
+                    yield row;
                 }
             }
-            cursor.next();
+
+            // Find the next cursor to advance, starting at the end.
+            for (let i = 0; i < cursors.length; i++) {
+                cursors[i].next();
+                if (cursors[i].hasData() || i === cursors.length - 1) {
+                    break;
+                }
+                // This cursor has reached the end, keep going
+                cursors[i].rewind();
+            }
         }
 
         if (this.isAccumulating) {

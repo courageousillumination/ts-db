@@ -48,6 +48,9 @@ type Keyword =
     | "table"
     | "integer"
     | "string"
+    | "primary"
+    | "key"
+    | "varchar"
     // UPDATE statements
     | "update"
     | "set";

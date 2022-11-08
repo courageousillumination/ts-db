@@ -18,7 +18,7 @@ export class SelectStatementParser extends BaseParser<SelectNode> {
         const start = this.consume("select");
         const columns = this.columns();
         this.consume("from");
-        const table = this.table();
+        const tables = this.tables();
         const where = this.match("where")
             ? this.applySubParser(ExpressionParser)
             : undefined;
@@ -27,7 +27,7 @@ export class SelectStatementParser extends BaseParser<SelectNode> {
         return {
             type: "select",
             columns,
-            table,
+            tables,
             where,
             orderBy,
             start: start.start,
@@ -46,6 +46,13 @@ export class SelectStatementParser extends BaseParser<SelectNode> {
                     expression: this.applySubParser(ExpressionParser),
                 };
             }
+        }, "comma");
+    }
+
+    /** Read tables */
+    private tables(): FromTable[] {
+        return this.consumeMany(() => {
+            return this.table();
         }, "comma");
     }
 
