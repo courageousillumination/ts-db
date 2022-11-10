@@ -11,20 +11,35 @@ import { SelectNode } from "../../parser/ast/select";
 import { StatementNode } from "../../parser/ast/statement";
 import { UpdateNode } from "../../parser/ast/update";
 
+const bubbleNulls = (func: (a: any, b: any) => any) => {
+    return (a: any, b: any) => (a === null || b === null ? null : func(a, b));
+};
+
 /** Binary operator tokens to JS functions. */
 const OPERATORS: Partial<Record<Operator, (...args: any[]) => any>> = {
-    multiply: (a, b) => a * b,
-    greaterThan: (a, b) => a > b,
-    lessThan: (a, b) => a < b,
-    lessThanEqual: (a, b) => a <= b,
-    add: (a, b) => a + b,
-    subtract: (a, b = null) => (b === null ? -a : a - b),
-    divide: (a, b) => a / b,
-    and: (a, b) => a && b,
+    multiply: bubbleNulls((a, b) => a * b),
+    greaterThan: bubbleNulls((a, b) => a > b),
+    lessThan: bubbleNulls((a, b) => a < b),
+    lessThanEqual: bubbleNulls((a, b) => a <= b),
+    add: bubbleNulls((a, b) => a + b),
+    subtract: bubbleNulls((a, b = undefined) => (b === undefined ? -a : a - b)),
+    divide: bubbleNulls((a, b) => a / b),
+    and: bubbleNulls((a, b) => a && b),
     or: (a, b) => a || b,
-    between: (a, b, c) => a >= b && a <= c,
-    greaterThanEqual: (a, b) => a >= b,
-    equal: (a, b) => a === b,
+    between: (a, b, c) => {
+        if (a === null) {
+            return null;
+        }
+        if (b === null || c === null) {
+            return false;
+        }
+        return a >= b && a <= c;
+    },
+    greaterThanEqual: bubbleNulls((a, b) => a >= b),
+    equal: bubbleNulls((a, b) => a === b),
+    is: (a, b) => a === b,
+    notEqual: (a, b) => a !== b,
+    not: (a) => !a,
 };
 
 /** Aggregation functions. */
@@ -32,6 +47,9 @@ const AGGREGATORS: Record<string, (a: any, b: any) => any> = {
     sum: (a, b) => (a || 0) + b,
     count: (a, _) => (a || 0) + 1,
     avg: ([avg, count] = [0, 0], b = 0) => {
+        if (b === null) {
+            return [avg, count];
+        }
         return [(avg * count) / (count + 1) + b / (count + 1), count + 1];
     },
 };
@@ -44,7 +62,8 @@ const AGGREGATEOR_GET_VALUE: Record<string, (a: any) => any> = {
 };
 
 const STANDARD_FUNCTIONS: Record<string, (a: any) => any> = {
-    abs: (a) => Math.abs(a),
+    abs: (a) => (a === null ? a : Math.abs(a)),
+    coalesce: (...args) => args.find((x) => x !== null) || null,
 };
 
 /** Checks if the expression will need an aggregate */
@@ -256,6 +275,18 @@ export class Interpreter {
                     const index = (col.expression.value as number) - 1;
                     const left = col.direction === "asc" ? a[index] : b[index];
                     const right = col.direction === "asc" ? b[index] : a[index];
+                    // Special case null handling.
+                    if (left === null && right === null) {
+                        continue;
+                    }
+
+                    if (left === null) {
+                        return -1;
+                    }
+
+                    if (right === null) {
+                        return 1;
+                    }
 
                     if (left < right) {
                         return -1;
@@ -283,7 +314,7 @@ export class Interpreter {
                     expression.operator,
                     ...expression.arguments
                 );
-                if (expression.negate) {
+                if (expression.negate && value !== null) {
                     return !value;
                 } else {
                     return value;
@@ -295,13 +326,16 @@ export class Interpreter {
                 if (expression.initial) {
                     initial = this.evaluateExpression(expression.initial);
                 }
-                for (const { when, then } of branches) {
-                    const whenValue = this.evaluateExpression(when);
-                    if (
-                        initial === whenValue ||
-                        (initial === undefined && whenValue)
-                    ) {
-                        return this.evaluateExpression(then);
+                if (initial !== null) {
+                    // Interesting. Need to read up on this. I guess it's just some null weirdness.
+                    for (const { when, then } of branches) {
+                        const whenValue = this.evaluateExpression(when);
+                        if (
+                            initial === whenValue ||
+                            (initial === undefined && whenValue)
+                        ) {
+                            return this.evaluateExpression(then);
+                        }
                     }
                 }
                 if (expression.else) {
@@ -411,7 +445,8 @@ export class Interpreter {
         if (!opFunction) {
             this.error(`Unknown operator ${operator}`);
         }
-        return opFunction(...args.map((e) => this.evaluateExpression(e)));
+        const evaluatedArgs = args.map((e) => this.evaluateExpression(e));
+        return opFunction(...evaluatedArgs);
     }
 
     /** Throws an error. */

@@ -32,10 +32,13 @@ const sqliteAll = (db: sqlite3.Database, input: string) => {
 const FILE_BASE = "./test/sqllogic/test-files/";
 
 const testFiles = [
+    // "select0.sql",
+    "select1.sql",
     "select2.sql",
+    "select3.sql",
+
     // Select5 works in theory, but it is super slow because of the
     // way the code is set up. Some optimizations might be needed.
-
     // "select5.sql",
 ];
 
@@ -56,7 +59,7 @@ describe("sqllogic", () => {
             });
         });
 
-        xdescribe("execution", () => {
+        describe("execution", () => {
             let client: RelationalClient;
             let reference: sqlite3.Database;
             beforeAll(async () => {
@@ -73,7 +76,6 @@ describe("sqllogic", () => {
             });
 
             test.each(queries)("executes %s", async (x) => {
-                console.log(x);
                 const result = client.execute(x);
                 const referenceResult = await sqliteAll(reference, x);
                 expect(result).toEqual(referenceResult);
