@@ -88,7 +88,7 @@ export class ExpressionParser extends BaseParser<ExpressionNode> {
 
     /** Handles the unary precedence level. */
     private unary(): ExpressionNode {
-        if (this.matchAny(["minus"])) {
+        if (this.matchAny(["minus", "plus"])) {
             const start = this.previous().start;
             const argument = this.unary();
             return {

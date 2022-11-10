@@ -21,7 +21,7 @@ const OPERATORS: Partial<Record<Operator, (...args: any[]) => any>> = {
     greaterThan: bubbleNulls((a, b) => a > b),
     lessThan: bubbleNulls((a, b) => a < b),
     lessThanEqual: bubbleNulls((a, b) => a <= b),
-    add: bubbleNulls((a, b) => a + b),
+    add: bubbleNulls((a, b = undefined) => (b === undefined ? a : a + b)),
     subtract: bubbleNulls((a, b = undefined) => (b === undefined ? -a : a - b)),
     divide: bubbleNulls((a, b) => a / b),
     and: bubbleNulls((a, b) => a && b),
