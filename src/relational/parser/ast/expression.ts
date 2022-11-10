@@ -23,7 +23,10 @@ export type Operator =
     | "lessThanEqual"
     | "between"
     | "and"
-    | "or";
+    | "or"
+    | "is"
+    | "not"
+    | "notEqual";
 
 /** A node that has a literal value. */
 export interface LiteralValueExpresisonNode extends BaseExpressionNode {

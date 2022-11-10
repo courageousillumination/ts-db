@@ -14,6 +14,7 @@ const KEYWORDS = [
     "equal",
     "lessThan",
     "greaterThan",
+    "is",
     // Terms
     "plus",
     "minus",
@@ -58,6 +59,8 @@ const KEYWORDS = [
     // UPDATE statements
     "update",
     "set",
+    // Other
+    "null",
 ];
 
 class Tokenizer {
@@ -117,6 +120,10 @@ class Tokenizer {
                     this.advance();
                     return this.addToken("lessThanEqual");
                 }
+                if (this.peek() === ">") {
+                    this.advance();
+                    return this.addToken("notEqual");
+                }
                 return this.addToken("lessThan");
             case "=":
                 return this.addToken("equal");
@@ -166,7 +173,9 @@ class Tokenizer {
             this.tokenStart.position,
             this.position
         );
-        if (KEYWORDS.includes(lexeme.toLowerCase())) {
+        if (lexeme.toLowerCase() === "null") {
+            return this.addToken("literal", null);
+        } else if (KEYWORDS.includes(lexeme.toLowerCase())) {
             return this.addToken(lexeme.toLowerCase() as TokenType);
         } else {
             return this.addToken("identifier");

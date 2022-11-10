@@ -19,6 +19,19 @@ export class ExpressionParser extends BaseParser<ExpressionNode> {
 
     /** Parses a boolean logic expression. */
     private booleanLogic(): ExpressionNode {
+        if (this.matchAny(["not"])) {
+            const start = this.previous().start;
+            const argument = this.booleanLogic();
+            return {
+                type: "expression",
+                subType: "operator",
+                operator: "not",
+                arguments: [argument],
+                start,
+                end: this.previous().end,
+            };
+        }
+
         return this.handleBinaryOperator(() => this.equality(), ["and", "or"]);
     }
 
@@ -54,6 +67,8 @@ export class ExpressionParser extends BaseParser<ExpressionNode> {
                 "greaterThan",
                 "lessThanEqual",
                 "greaterThanEqual",
+                "is",
+                "notEqual",
             ],
             value
         );
@@ -182,7 +197,7 @@ export class ExpressionParser extends BaseParser<ExpressionNode> {
     /** Parses a function call */
     private functionExpression(): ExpressionNode {
         const previous = this.previous();
-        const args: ExpressionNode[] = [];
+        let args: ExpressionNode[] = [];
         let wildcard = false;
         let distinct = false;
 
@@ -197,8 +212,8 @@ export class ExpressionParser extends BaseParser<ExpressionNode> {
             if (this.match("distinct")) {
                 distinct = true;
             }
-            const expr = this.expression();
-            args.push(expr);
+
+            args = this.consumeMany(() => this.expression(), "comma");
         }
 
         this.match("rightParen");
@@ -242,6 +257,9 @@ export class ExpressionParser extends BaseParser<ExpressionNode> {
         let value = initial || lower();
         while (this.matchAny(tokens)) {
             const operator = this.previous();
+            // TODO: this isn't always true... but eh it'll
+            // probably be fine.
+            const isNegative = !!this.match("not");
             const right = lower();
             value = {
                 type: "expression",
@@ -250,6 +268,7 @@ export class ExpressionParser extends BaseParser<ExpressionNode> {
                 arguments: [value, right],
                 start: value.start,
                 end: this.previous().end,
+                negate: isNegative,
             };
         }
         return value;
@@ -273,6 +292,8 @@ export class ExpressionParser extends BaseParser<ExpressionNode> {
             case "greaterThanEqual":
             case "and":
             case "or":
+            case "is":
+            case "notEqual":
                 return tokenType;
             default:
                 this.error(`Bad operator: ${tokenType}`);

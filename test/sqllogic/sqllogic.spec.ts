@@ -56,7 +56,7 @@ describe("sqllogic", () => {
             });
         });
 
-        describe("execution", () => {
+        xdescribe("execution", () => {
             let client: RelationalClient;
             let reference: sqlite3.Database;
             beforeAll(async () => {

@@ -10,6 +10,7 @@ type Keyword =
     | "equal"
     | "lessThan"
     | "greaterThan"
+    | "is"
     // Terms
     | "plus"
     | "minus"
@@ -70,7 +71,8 @@ type SpecialCharacter =
     | "minus"
     | "lessThan"
     | "lessThanEqual"
-    | "dot";
+    | "dot"
+    | "notEqual";
 
 /**
  * Possible token types: keywords, special characters, identifiers, and literals.
