@@ -15,18 +15,24 @@ export class CreateStatementParser extends BaseParser<CreateNode> {
         const columns: ColumnDefinition[] = this.consumeMany(() => {
             const name = this.consume("identifier");
             const type = this.matchAny(["integer", "string", "varchar"]);
-
+            let primary = false;
             if (this.match("leftParen")) {
-                this.consume("literal"); // Yeah just gonna ignore these...
+                // Yeah just gonna ignore these arguments to varchar for now.
+                this.consume("literal");
                 this.consume("rightParen");
             }
             if (this.match("primary")) {
                 this.match("key");
+                primary = true;
             }
             if (!type) {
                 this.error(`Unknown column type ${this.previous().lexeme}`);
             }
-            return { name: name.lexeme, type: type.lexeme as ColumnType };
+            return {
+                name: name.lexeme,
+                type: type.lexeme as ColumnType,
+                primary,
+            };
         }, "comma");
         this.consume("rightParen");
         return {

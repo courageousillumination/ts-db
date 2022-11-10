@@ -32,7 +32,7 @@ const sqliteAll = (db: sqlite3.Database, input: string) => {
 const FILE_BASE = "./test/sqllogic/test-files/";
 
 const testFiles = [
-    "select1.sql",
+    "select2.sql",
     // Select5 works in theory, but it is super slow because of the
     // way the code is set up. Some optimizations might be needed.
 

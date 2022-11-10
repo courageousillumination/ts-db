@@ -16,6 +16,15 @@ export class Cursor {
         this.position = 0;
     }
 
+    public seekId(id: unknown) {
+        const columnIndex = this.columns.findIndex((x) => x.primary);
+        if (!columnIndex) {
+            throw new Error("No primary key found");
+        }
+        // In theory these could be sorted, but scan so whatever.
+        return this.data.find((x) => x[columnIndex] === id);
+    }
+
     public getRow() {
         return this.data[this.position];
     }

@@ -9,6 +9,8 @@ export interface ColumnDefinition {
     name: string;
     /** Type of the column. */
     type: ColumnType;
+    /** Whether this column should be marked as the primary column. */
+    primary?: boolean;
 }
 
 export interface CreateNode extends BaseNode {

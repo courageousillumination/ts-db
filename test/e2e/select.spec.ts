@@ -74,4 +74,6 @@ describe("SELECT statements", () => {
             expect(result).toHaveLength(4);
         });
     });
+
+    describe("with index", () => {});
 });
