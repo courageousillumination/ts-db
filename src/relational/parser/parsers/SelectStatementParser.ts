@@ -1,20 +1,66 @@
 import { ExpressionParser } from "./ExpressionParser";
 import { BaseParser } from "./BaseParser";
 import {
+    CompoundSelect,
+    CompoundSelectPart,
     FromTable,
     OrderByTerm,
     ResultColumn,
     SelectNode,
+    SimpleSelectNode,
 } from "../ast/select";
 
 /** Parser for handling select statements. */
-export class SelectStatementParser extends BaseParser<SelectNode> {
+export class SelectStatementParser extends BaseParser<
+    SelectNode | CompoundSelect
+> {
     protected parseInternal() {
         return this.selectStatement();
     }
 
     /** Parses a select statement. */
     private selectStatement(): SelectNode {
+        const select = this.selectCore();
+
+        const compoundSelects: CompoundSelectPart[] = [];
+
+        while (this.matchAny(["union", "except", "intersect"])) {
+            const previous = this.previous().type;
+            let compoundOperator: any;
+            switch (previous) {
+                case "union":
+                    if (this.match("all")) {
+                        compoundOperator = "unionAll";
+                    } else {
+                        compoundOperator = "union";
+                    }
+                    break;
+                default:
+                    compoundOperator = previous;
+            }
+
+            const select = this.selectCore();
+            compoundSelects.push({ select, compoundOperator });
+        }
+
+        // Group and order by come after all of the compounds
+        const orderBy = this.orderBy();
+
+        if (compoundSelects.length === 0) {
+            return { ...select, orderBy, end: this.previous().end };
+        } else {
+            return {
+                type: "compound-select",
+                parts: [
+                    { select, compoundOperator: "initial" },
+                    ...compoundSelects,
+                ],
+                orderBy,
+            };
+        }
+    }
+
+    private selectCore(): SimpleSelectNode {
         const start = this.consume("select");
         const columns = this.columns();
         this.consume("from");
@@ -22,14 +68,11 @@ export class SelectStatementParser extends BaseParser<SelectNode> {
         const where = this.match("where")
             ? this.applySubParser(ExpressionParser)
             : undefined;
-        const orderBy = this.orderBy();
-
         return {
             type: "select",
             columns,
             tables,
             where,
-            orderBy,
             start: start.start,
             end: this.previous().end,
         };

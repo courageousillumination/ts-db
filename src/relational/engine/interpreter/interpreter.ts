@@ -1,18 +1,96 @@
 import { Backend } from "../../backend/backend";
 import { Cursor } from "../../backend/cursor";
-import { CreateNode } from "../../parser/ast/create";
+import { CreateIndexNode, CreateNode } from "../../parser/ast/create";
 import {
     ExpressionNode,
     FunctionCallExpressionNode,
     Operator,
 } from "../../parser/ast/expression";
 import { InsertNode } from "../../parser/ast/insert";
-import { SelectNode } from "../../parser/ast/select";
+import { CompoundSelect, SimpleSelectNode } from "../../parser/ast/select";
 import { StatementNode } from "../../parser/ast/statement";
 import { UpdateNode } from "../../parser/ast/update";
 
 const bubbleNulls = (func: (a: any, b: any) => any) => {
     return (a: any, b: any) => (a === null || b === null ? null : func(a, b));
+};
+
+const rowEqual = (a: any[], b: any[]) => {
+    if (a.length !== b.length) {
+        return false;
+    }
+    for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) {
+            return false;
+        }
+    }
+    return true;
+};
+
+const uniqueData = (a: any[][]) => {
+    let result = [];
+    for (let i = 0; i < a.length; i++) {
+        let found = false;
+        for (let j = i + 1; j < a.length; j++) {
+            if (rowEqual(a[i], a[j])) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            result.push(a[i]);
+        }
+    }
+    return result;
+};
+
+const applyCompoundOperator = (
+    a: any[][],
+    b: any[][],
+    operator: "union" | "unionAll" | "intersect" | "except" | "initial"
+) => {
+    if (operator == "initial") {
+        return b;
+    }
+    if (operator == "union") {
+        const result = [...a, ...b];
+        return uniqueData(result);
+    }
+
+    if (operator === "unionAll") {
+        const result = [...a, ...b];
+        return result;
+    }
+
+    if (operator === "intersect") {
+        const result = [];
+        for (const row1 of a) {
+            for (const row2 of b) {
+                if (rowEqual(row1, row2)) {
+                    result.push(row1);
+                }
+            }
+        }
+        return uniqueData(result);
+    }
+
+    if (operator === "except") {
+        const results = [];
+        for (const row1 of a) {
+            let found = false;
+            for (const row2 of b) {
+                if (rowEqual(row1, row2)) {
+                    found = true;
+                }
+            }
+            if (!found) {
+                results.push(row1);
+            }
+        }
+        return uniqueData(results);
+    }
+
+    throw new Error("unsupported operation");
 };
 
 /** Binary operator tokens to JS functions. */
@@ -141,10 +219,73 @@ export class Interpreter {
                 return this.executeInsert(this.statement);
             case "update":
                 return this.executeUpdate(this.statement);
+            case "create-index":
+                return this.executeCreateIndex(this.statement);
+            case "compound-select":
+                return this.executeCompoundSelect(this.statement);
             default:
                 this.error(
                     `Unhandled statement: ${(this.statement as any).type}`
                 );
+        }
+    }
+
+    private *executeCreateIndex(statement: CreateIndexNode) {
+        // We ignore indexes for now.
+        return;
+    }
+
+    private *executeCompoundSelect(statement: CompoundSelect) {
+        let results: any[] = [];
+        for (const s of statement.parts) {
+            const subQueryResults = [...this.executeSelect(s.select)];
+            results = applyCompoundOperator(
+                results,
+                subQueryResults,
+                s.compoundOperator
+            );
+        }
+        // Finally do the order by
+
+        if (statement.orderBy) {
+            // Sort the remaining sort list
+            // Right now we only support order by with number expressions.
+            const sorted = results.sort((a: any[], b: any[]) => {
+                for (const col of statement.orderBy || []) {
+                    if (col.expression.subType !== "literal-value") {
+                        this.error("Only number order by are supported.");
+                    }
+                    const index = (col.expression.value as number) - 1;
+                    const left = col.direction === "asc" ? a[index] : b[index];
+                    const right = col.direction === "asc" ? b[index] : a[index];
+                    // Special case null handling.
+                    if (left === null && right === null) {
+                        continue;
+                    }
+
+                    if (left === null) {
+                        return -1;
+                    }
+
+                    if (right === null) {
+                        return 1;
+                    }
+
+                    if (left < right) {
+                        return -1;
+                    } else if (left > right) {
+                        return 1;
+                    }
+                }
+                return 0;
+            });
+            for (const row of sorted) {
+                yield row;
+            }
+        } else {
+            for (const row of results) {
+                yield row;
+            }
         }
     }
 
@@ -201,9 +342,8 @@ export class Interpreter {
      * Execute a select statement.
      * Returns a generator for each result row.
      */
-    private *executeSelect(statement: SelectNode): Generator<unknown[]> {
+    private *executeSelect(statement: SimpleSelectNode): Generator<unknown[]> {
         // Set up the context
-
         const cursors: Cursor[] = [];
         for (const table of statement.tables) {
             const tableName = table.tableName;
@@ -369,9 +509,22 @@ export class Interpreter {
                 }
 
                 this.error("Idk, select went wrong...");
+            case "in":
+                let values: any[] = [];
+                if (Array.isArray(expression.list)) {
+                    values = expression.list.map((e) =>
+                        this.evaluateExpression(e)
+                    );
+                } else {
+                    this.error("Selects are not supported yet");
+                }
+                const left = this.evaluateExpression(expression.expression);
+                return expression.negate
+                    ? !values.includes(left)
+                    : values.includes(left);
             default:
                 this.error(
-                    `Unhandled expression type: ${(expression as any).type}`
+                    `Unhandled expression type: ${(expression as any).subType}`
                 );
         }
     }

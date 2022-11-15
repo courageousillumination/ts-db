@@ -1,4 +1,5 @@
 import { BaseNode } from "./base-node";
+import { OrderByTerm } from "./select";
 
 /** Types of columns. */
 export type ColumnType = "integer" | "string";
@@ -19,4 +20,14 @@ export interface CreateNode extends BaseNode {
     table: string;
     /** Columns definitions */
     columns: ColumnDefinition[];
+}
+
+export interface CreateIndexNode extends BaseNode {
+    type: "create-index";
+
+    table: string;
+
+    index: string;
+
+    columns: { column: string; direction: "asc" | "desc" }[];
 }

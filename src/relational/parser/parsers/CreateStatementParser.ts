@@ -1,15 +1,32 @@
-import { ColumnDefinition, CreateNode, ColumnType } from "../ast/create";
+import {
+    ColumnDefinition,
+    CreateNode,
+    ColumnType,
+    CreateIndexNode,
+} from "../ast/create";
+import { DebugToken, Token } from "../tokenizer";
 import { BaseParser } from "./BaseParser";
 
-export class CreateStatementParser extends BaseParser<CreateNode> {
+export class CreateStatementParser extends BaseParser<
+    CreateNode | CreateIndexNode
+> {
     protected parseInternal() {
         return this.createStatement();
     }
 
     /** Parses a create statement. */
-    private createStatement(): CreateNode {
+    private createStatement(): CreateNode | CreateIndexNode {
         const start = this.consume("create");
-        this.consume("table");
+
+        if (this.match("table")) {
+            return this.createTable(start);
+        }
+
+        this.consume("index");
+        return this.createIndex(start);
+    }
+
+    private createTable(start: DebugToken): CreateNode {
         const table = this.consume("identifier");
         this.consume("leftParen");
         const columns: ColumnDefinition[] = this.consumeMany(() => {
@@ -38,6 +55,33 @@ export class CreateStatementParser extends BaseParser<CreateNode> {
         return {
             type: "create",
             table: table.lexeme,
+            columns,
+            start: start.start,
+            end: this.previous().end,
+        };
+    }
+
+    private createIndex(start: DebugToken): CreateIndexNode {
+        const indexName = this.consume("identifier").lexeme;
+        this.consume("on");
+        const tableName = this.consume("identifier").lexeme;
+        this.consume("leftParen");
+        const columns = this.consumeMany(() => {
+            const column = this.consume("identifier").lexeme;
+            let direction: "asc" | "desc";
+            if (this.match("desc")) {
+                direction = "desc";
+            } else {
+                this.match("asc");
+                direction = "asc";
+            }
+            return { column, direction };
+        }, "comma");
+        this.consume("rightParen");
+        return {
+            type: "create-index",
+            table: tableName,
+            index: indexName,
             columns,
             start: start.start,
             end: this.previous().end,

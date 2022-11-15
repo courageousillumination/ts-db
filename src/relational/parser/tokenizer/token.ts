@@ -27,8 +27,10 @@ type Keyword =
     | "literal"
     // Nested SELECT
     | "exists"
-    // between
+    // Between
     | "between"
+    // In
+    | "in"
     // SELECT statements
     | "select"
     | "from"
@@ -46,15 +48,22 @@ type Keyword =
     | "into"
     // CREATE statements
     | "create"
+    | "index"
     | "table"
     | "integer"
     | "string"
     | "primary"
     | "key"
     | "varchar"
+    | "on"
     // UPDATE statements
     | "update"
-    | "set";
+    | "set"
+    // Compound operators
+    | "union"
+    | "all"
+    | "intersect"
+    | "except";
 
 /** Special characters. */
 type SpecialCharacter =

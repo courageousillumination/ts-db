@@ -32,7 +32,7 @@ export interface OrderByTerm {
 }
 
 /** Represents a select statement in the AST. */
-export interface SelectNode extends BaseNode {
+export interface SimpleSelectNode extends BaseNode {
     type: "select";
     /** Columns to select. */
     columns: ResultColumn[];
@@ -43,3 +43,16 @@ export interface SelectNode extends BaseNode {
     /** Order by list. */
     orderBy?: OrderByTerm[];
 }
+
+export interface CompoundSelect {
+    type: "compound-select";
+    parts: CompoundSelectPart[];
+    orderBy?: OrderByTerm[];
+}
+
+export interface CompoundSelectPart {
+    select: SimpleSelectNode;
+    compoundOperator: "union" | "unionAll" | "intersect" | "except" | "initial";
+}
+
+export type SelectNode = CompoundSelect | SimpleSelectNode;

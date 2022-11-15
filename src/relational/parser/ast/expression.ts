@@ -106,10 +106,24 @@ export interface SelectExpressionNode extends BaseExpressionNode {
     exists?: boolean;
 }
 
+export interface InExpressionNode extends BaseExpressionNode {
+    subType: "in";
+
+    /** The expression to evaluate. */
+    expression: ExpressionNode;
+
+    /** Expressions to check */
+    list: ExpressionNode[] | SelectNode;
+
+    /** Whether this should be negated. */
+    negate?: boolean;
+}
+
 export type ExpressionNode =
     | LiteralValueExpresisonNode
     | OperatorExpressionNode
     | CaseExpressionNode
     | ColumnExpressionNode
     | FunctionCallExpressionNode
-    | SelectExpressionNode;
+    | SelectExpressionNode
+    | InExpressionNode;

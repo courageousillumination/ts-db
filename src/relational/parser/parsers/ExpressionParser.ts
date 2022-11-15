@@ -4,6 +4,7 @@ import { BaseParser } from "./BaseParser";
 import { ExpressionNode, Operator } from "../ast/expression";
 import { DebugToken, TokenType } from "../tokenizer";
 import { SelectStatementParser } from "./SelectStatementParser";
+import { SelectNode } from "../ast/select";
 
 /** Parser for SQL based expressions. */
 export class ExpressionParser extends BaseParser<ExpressionNode> {
@@ -54,6 +55,29 @@ export class ExpressionParser extends BaseParser<ExpressionNode> {
                 subType: "operator",
                 operator: "between",
                 arguments: [value, left, right],
+                negate: negate,
+                start: value.start,
+                end: right.end,
+            };
+        }
+
+        // In also needs special handling
+        if (this.peek()?.type === "in" || this.peek(2)?.type === "in") {
+            const negate = !!this.match("not");
+            this.consume("in");
+            this.consume("leftParen");
+            let list: SelectNode | ExpressionNode[];
+            if (this.match("select")) {
+                list = this.applySubParser(SelectStatementParser);
+            } else {
+                list = this.consumeMany(() => this.expression(), "comma");
+            }
+            const right = this.consume("rightParen");
+            return {
+                type: "expression",
+                subType: "in",
+                expression: value,
+                list,
                 negate: negate,
                 start: value.start,
                 end: right.end,

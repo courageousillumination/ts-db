@@ -36,11 +36,29 @@ const testFiles = [
     "select1.sql",
     "select2.sql",
     "select3.sql",
+    // WIP
 
-    // Select5 works in theory, but it is super slow because of the
+    // Select 4 and 5 works in theory, but it is super slow because of the
     // way the code is set up. Some optimizations might be needed.
+    // "select4.sql",
     // "select5.sql",
 ];
+
+const arrayComp = (a: any[], b: any[]) => {
+    for (let i = 0; i < a.length; i++) {
+        if (a[i] < b[i]) {
+            return -1;
+        } else if (a[i] > b[i]) {
+            return 1;
+        }
+    }
+    return 0;
+};
+const getRecord = (records: SQLLogicRecord[], querystring: string) => {
+    return records.find(
+        (x) => x.type === "query" && getQueryString(x) === querystring
+    );
+};
 
 describe("sqllogic", () => {
     describe.each(testFiles)("%s", (testFile) => {
@@ -78,6 +96,17 @@ describe("sqllogic", () => {
             test.each(queries)("executes %s", async (x) => {
                 const result = client.execute(x);
                 const referenceResult = await sqliteAll(reference, x);
+
+                const record = getRecord(records, x);
+                if (
+                    record?.type === "query" &&
+                    (record.sortMode === "valuesort" ||
+                        record.sortMode === "rowsort")
+                ) {
+                    result.sort(arrayComp);
+                    (referenceResult as any).sort(arrayComp);
+                }
+                // console.log(result, reference)
                 expect(result).toEqual(referenceResult);
             });
         });

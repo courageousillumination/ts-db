@@ -38,7 +38,8 @@ export class Cursor {
         if (index === -1) {
             throw new Error("Could not find column");
         }
-        return this.data[this.position][index] || null;
+        const value = this.data[this.position][index];
+        return value !== undefined ? value : null;
     }
 
     public writeRecord(record: unknown[]) {

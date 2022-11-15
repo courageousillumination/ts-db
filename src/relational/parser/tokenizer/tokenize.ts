@@ -33,6 +33,8 @@ const KEYWORDS = [
     "exists",
     // between
     "between",
+    // in
+    "in",
     // SELECT statements
     "select",
     "from",
@@ -51,6 +53,8 @@ const KEYWORDS = [
     // CREATE statements
     "create",
     "table",
+    "index",
+    "on",
     "integer",
     "string",
     "primary",
@@ -61,6 +65,11 @@ const KEYWORDS = [
     "set",
     // Other
     "null",
+    // Compound operators
+    "union",
+    "all",
+    "intersect",
+    "except",
 ];
 
 class Tokenizer {
