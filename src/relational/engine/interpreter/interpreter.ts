@@ -247,9 +247,6 @@ const isAggregate = (expression: ExpressionNode): boolean => {
 
 const advanceCursors = (cursors: Cursor[], constraints: Constraint[]) => {
     for (let i = 0; i < cursors.length; i++) {
-        if (i > 4) {
-            console.log("next", i);
-        }
         // Try to advance the cursor to the next row.
         if (cursors[i].next()) {
             break;
@@ -489,7 +486,6 @@ export class Interpreter {
                 ? computeColumnConstraints(statement.where)
                 : [];
 
-        console.log(constraints);
         if (constraints.length) {
             for (const cursor of cursors) {
                 const cursorConstraint = constraints.find((x) =>

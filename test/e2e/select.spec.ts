@@ -12,7 +12,7 @@ describe("SELECT statements", () => {
 
     beforeEach(async () => {
         backend = new Backend();
-        client = new RelationalClient(backend);
+        client = new RelationalClient(backend, "bytecode");
 
         backend.createTable("table1", [
             { name: "a", type: "integer" },
@@ -48,6 +48,20 @@ describe("SELECT statements", () => {
         it("supports expressions", async () => {
             const result = client.execute("SELECT a > 1 FROM table1");
             expect(result).toEqual([[false], [true]]);
+        });
+
+        it("supports case expressions", () => {
+            const result = client.execute(
+                "SELECT CASE WHEN a > 1 THEN 1 ELSE 2 END FROM table1"
+            );
+            expect(result).toEqual([[2], [1]]);
+        });
+
+        it("supports case expressions with an initial value", () => {
+            const result = client.execute(
+                "SELECT CASE 5 WHEN 2 THEN 1 WHEN 5 THEN 3 ELSE 2 END FROM table1"
+            );
+            expect(result).toEqual([[3], [3]]);
         });
     });
 

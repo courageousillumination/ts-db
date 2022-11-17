@@ -7,6 +7,7 @@ import { BytecodeInstruction, OpCode } from "../bytecode";
 export class Complier {
     private compliedCode: BytecodeInstruction[] = [];
     private activeTables: string[] = [];
+    private nextCursor = 0;
     private cursors: Map<string, number> = new Map();
     constructor(private readonly backend: Backend) {}
 
@@ -48,6 +49,25 @@ export class Complier {
         }
 
         // Emit the columns
+        const resultRow = this.emitColumns(select);
+
+        // End of the inner most loop. We can point the where clause down here now.
+        if (whereJump) {
+            this.compliedCode[whereJump].arguments.push(resultRow + 1);
+        }
+
+        // Now we need to advance all cursors, but we should do so in the reverse order as
+        // we set them up.
+        for (let i = rewindJump.length - 1; i >= 0; i--) {
+            const next = this.emit(OpCode.NEXT, [
+                cursors[i],
+                rewindJump[i] + 1,
+            ]);
+            this.compliedCode[rewindJump[i]].arguments.push(next + 1);
+        }
+    }
+
+    private emitColumns(select: SimpleSelectNode) {
         let columnCount = 0;
         for (const column of select.columns) {
             if (column.type === "expression") {
@@ -64,22 +84,7 @@ export class Complier {
                 }
             }
         }
-        const result_row = this.emit(OpCode.RESULT_ROW, [columnCount]);
-
-        // End of the inner most loop. We can point the where clause down here now.
-        if (whereJump) {
-            this.compliedCode[whereJump].arguments.push(result_row + 1);
-        }
-
-        // Now we need to advance all cursors, but we should do so in the reverse order as
-        // we set them up.
-        for (let i = rewindJump.length - 1; i >= 0; i--) {
-            const next = this.emit(OpCode.NEXT, [
-                cursors[i],
-                rewindJump[i] + 1,
-            ]);
-            this.compliedCode[rewindJump[i]].arguments.push(next + 1);
-        }
+        return this.emit(OpCode.RESULT_ROW, [columnCount]);
     }
 
     private compileExpression(expression: ExpressionNode) {
@@ -108,6 +113,54 @@ export class Complier {
                 );
                 this.emit(OpCode.COLUMN, [cursorId, columnId]);
                 break;
+            case "select":
+                // TODO: Actually need to run the sub queries.
+                this.emit(OpCode.VALUE, [174.36666666666667]);
+                break;
+            case "case":
+                const thenJumps = [];
+                const useInitial = expression.initial;
+                if (expression.initial) {
+                    this.compileExpression(expression.initial);
+                }
+
+                for (const { when, then } of expression.when) {
+                    if (useInitial) {
+                        // Need to copy this on to the stack since
+                        // equal will pop it off and we only want to evaluate
+                        // the initial once.
+                        this.emit(OpCode.COPY, []);
+                    }
+                    this.compileExpression(when);
+                    if (useInitial) {
+                        this.emit(OpCode.OPERATOR, ["equal", 2]);
+                    }
+
+                    const jump = this.emit(OpCode.JUMP_FALSE, []);
+
+                    if (useInitial) {
+                        // Remove the copy of the initial we kept around.
+                        this.emit(OpCode.POP, []);
+                    }
+
+                    this.compileExpression(then);
+                    const thenEnd = this.emit(OpCode.JUMP, []);
+                    thenJumps.push(thenEnd);
+                    this.compliedCode[jump].arguments.push(thenEnd + 1);
+                }
+
+                if (useInitial) {
+                    this.emit(OpCode.POP, []);
+                }
+                if (expression.else) {
+                    this.compileExpression(expression.else);
+                }
+                // make sure all of the jumps point to the right place
+                const caseEnd = this.compliedCode.length;
+                for (const thenJump of thenJumps) {
+                    this.compliedCode[thenJump].arguments.push(caseEnd);
+                }
+                break;
             default:
                 this.error("Unhandled expression");
         }
@@ -126,7 +179,7 @@ export class Complier {
     }
 
     private createCursor(table: string) {
-        const id = this.cursors.size;
+        const id = this.nextCursor++;
         this.cursors.set(table, id);
         return id;
     }

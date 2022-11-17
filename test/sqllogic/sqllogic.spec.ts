@@ -32,8 +32,8 @@ const sqliteAll = (db: sqlite3.Database, input: string) => {
 const FILE_BASE = "./test/sqllogic/test-files/";
 
 const testFiles = [
-    "select0.sql",
-    // "select1.sql",
+    // "select0.sql",
+    "select1.sql",
     // "select2.sql",
     // "select3.sql",
     // WIP
@@ -66,8 +66,8 @@ describe("sqllogic", () => {
         const queriesAndStatements = records.map(getQueryString);
         const queries = records
             .filter((x) => x.type === "query")
-            .map(getQueryString);
-        // .slice(1050, 1060);
+            .map(getQueryString)
+            .slice(0, 1);
         const statements = records
             .filter((x) => x.type === "statement")
             .map(getQueryString);
@@ -95,9 +95,7 @@ describe("sqllogic", () => {
             });
 
             test.each(queries)("executes %s", async (x) => {
-                console.log("starting", x);
-                // if (1 === 1) return;
-                const result = client.execute(x);
+                const result = client.execute(x, "bytecode");
                 const referenceResult = await sqliteAll(reference, x);
 
                 const record = getRecord(records, x);

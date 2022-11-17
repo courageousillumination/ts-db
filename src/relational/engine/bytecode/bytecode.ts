@@ -8,6 +8,8 @@
  *   then push the result back on the stack.
  * - VALUE [value]: Push value on to the stack.
  * - JUMP_FALSE [target]: Jump to the target if the top value of the stack is false
+ * - JMUP [target]: Unconditional jump
+ * - COPY: Copy whatever is on top of the stack
  *
  * Opcodes for basic cursor/backend
  *
@@ -41,6 +43,9 @@ export enum OpCode {
     OPERATOR = "operator",
     VALUE = "value",
     JUMP_FALSE = "jump_false",
+    JUMP = "jump",
+    COPY = "copy",
+    POP = "pop",
 
     OPEN_CURSOR = "open_cursor",
     REWIND = "rewind",

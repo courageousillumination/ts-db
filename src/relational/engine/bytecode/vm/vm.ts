@@ -55,6 +55,17 @@ export class VirtualMachine {
                         this.pc = instruction.arguments[0];
                     }
                     break;
+                case OpCode.JUMP:
+                    this.pc = instruction.arguments[0];
+                    break;
+                case OpCode.POP:
+                    this.pop();
+                    break;
+                case OpCode.COPY:
+                    const value = this.pop();
+                    this.push(value);
+                    this.push(value);
+                    break;
                 default:
                     this.error(`Unhandled opcode: ${instruction.opcode}`);
             }
