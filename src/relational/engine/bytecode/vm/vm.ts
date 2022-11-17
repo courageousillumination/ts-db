@@ -1,101 +1,131 @@
-import { Backend } from "../backend/backend";
-import { Cursor } from "../backend/cursor";
-import { ByteCode, Operation, SimpleOpCode } from "../compiler/bytecode";
+import { Backend } from "../../../backend/backend";
+import { Cursor } from "../../../backend/cursor";
+import { Operator } from "../../../parser/ast/expression";
+import { OPERATORS } from "../../shared/operators";
+import { BytecodeInstruction, OpCode } from "../bytecode";
 
-const SIMPLE_FUNCTIONS: Record<SimpleOpCode, any> = {
-    add: (a: number, b: number) => a + b,
-    subtract: (a: number, b: number) => a - b,
-    divide: (a: number, b: number) => a / b,
-    multiply: (a: number, b: number) => a * b,
-};
+export class VirtualMachine {
+    /** Mixed type stack. */
+    private stack: unknown[] = [];
 
-export class VM {
-    private readonly stack: unknown[] = [];
-    private bytecode: ByteCode = [];
-    private position: number = 0;
-    private cursor?: Cursor;
+    /** Code being executed. */
+    private code: BytecodeInstruction[] = [];
+
+    /** Current program counter. */
+    private pc: number = 0;
+
+    /** Open cursors */
+    private cursors: Record<number, Cursor> = {};
+
     constructor(private readonly backend: Backend) {}
 
-    public reset() {
-        this.bytecode = [];
-        this.position = 0;
+    public prepare(code: BytecodeInstruction[]) {
+        this.code = code;
     }
 
-    public loadBytecode(bytecode: ByteCode) {
-        this.bytecode = bytecode;
-    }
-
-    /**
-     * Runs to geta single result row. If the program
-     * execution is at the end returns null
-     */
-    public async step(): Promise<unknown[] | null> {
-        while (this.position < this.bytecode.length) {
-            const op = this.bytecode[this.position++];
-            if (op.type !== "resultRow") {
-                this.executeOp(op);
-            } else {
-                const values = this.popMany(op.columnCount);
-                return values;
+    /** Runs the VM until a new row is encountered. */
+    public *step() {
+        while (this.pc < this.code.length) {
+            const instruction = this.code[this.pc++];
+            switch (instruction.opcode) {
+                case OpCode.VALUE:
+                    this.push(instruction.arguments[0]);
+                    break;
+                case OpCode.OPERATOR:
+                    this.applyOperator(instruction);
+                    break;
+                case OpCode.OPEN_CURSOR:
+                    this.openCursor(instruction);
+                    break;
+                case OpCode.REWIND:
+                    this.rewind(instruction);
+                    break;
+                case OpCode.NEXT:
+                    this.next(instruction);
+                    break;
+                case OpCode.COLUMN:
+                    this.column(instruction);
+                    break;
+                case OpCode.RESULT_ROW:
+                    // NOTE: Only yield here
+                    yield this.resultRow(instruction);
+                    break;
+                case OpCode.JUMP_FALSE:
+                    if (!this.pop()) {
+                        this.pc = instruction.arguments[0];
+                    }
+                    break;
+                default:
+                    this.error(`Unhandled opcode: ${instruction.opcode}`);
             }
         }
-        return null;
     }
 
-    public executeOp(op: Operation): unknown {
-        switch (op.type) {
-            case "constant":
-                return this.stack.push(op.value);
-            case "add":
-            case "subtract":
-            case "divide":
-            case "multiply":
-                return this.simpleFunc(SIMPLE_FUNCTIONS[op.type], 2);
-            case "openCursor":
-                this.cursor = this.backend.createCursor();
-                return;
-            case "next":
-                if (!this.cursor) {
-                    throw new Error("No open cursor");
-                }
-                if (this.cursor.canAdvance()) {
-                    this.cursor.next();
-                    this.position += op.jump - 1; // janky...
-                }
-                return;
-            case "column":
-                if (!this.cursor) {
-                    throw new Error("No open cursor");
-                }
-                this.push(this.cursor?.getColumn(op.index));
-                return;
-            default:
-                throw new Error(`Unhandled opcode: ${(op as any).type}`);
+    public debug() {
+        console.log(this.code);
+        console.log(this.stack);
+    }
+
+    private resultRow(instruction: BytecodeInstruction) {
+        const row = this.popMany(instruction.arguments[0]);
+        return row;
+    }
+
+    private column(instruction: BytecodeInstruction) {
+        const cursor = this.cursors[instruction.arguments[0]];
+        this.push(cursor.getColumnByIndex(instruction.arguments[1]));
+    }
+
+    private next(instruction: BytecodeInstruction) {
+        const cursor = this.cursors[instruction.arguments[0]];
+        if (cursor.next()) {
+            this.pc = instruction.arguments[1];
         }
     }
 
-    private simpleFunc(
-        func: (...args: unknown[]) => unknown,
-        argCount: number
-    ) {
-        const args = this.popMany(argCount);
+    private rewind(instruction: BytecodeInstruction) {
+        const cursor = this.cursors[instruction.arguments[0]];
+        if (cursor.isEmpty()) {
+            this.pc = instruction.arguments[1];
+        } else {
+            cursor.rewind();
+        }
+    }
+
+    private applyOperator(instruction: BytecodeInstruction) {
+        const args = this.popMany(instruction.arguments[1]);
+        const func = OPERATORS[instruction.arguments[0] as Operator];
+        if (!func) {
+            this.error("Unexpected operator");
+        }
         const result = func(...args);
         this.push(result);
+    }
+
+    private openCursor(instruction: BytecodeInstruction) {
+        const cursor = this.backend.createCursor(instruction.arguments[1]);
+        this.cursors[instruction.arguments[0]] = cursor;
+    }
+
+    private error(msg: string): never {
+        throw new Error(`Runtime error: ${msg}`);
     }
 
     private pop() {
         return this.stack.pop();
     }
 
-    private popMany(count: number) {
+    private popMany(count: number = 1) {
         const result = [];
         for (let i = 0; i < count; i++) {
-            result.push(this.pop());
+            result.push(this.stack.pop());
         }
-        return result;
+        // Note to make some logic easier we just reverse it here.
+        // this means if the stack is [a, b, c] then we get [b,c] to pass to everyone else.
+        return result.reverse();
     }
 
     private push(value: unknown) {
-        return this.stack.push(value);
+        this.stack.push(value);
     }
 }

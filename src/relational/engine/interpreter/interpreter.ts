@@ -11,6 +11,7 @@ import { InsertNode } from "../../parser/ast/insert";
 import { CompoundSelect, SimpleSelectNode } from "../../parser/ast/select";
 import { StatementNode } from "../../parser/ast/statement";
 import { UpdateNode } from "../../parser/ast/update";
+import { OPERATORS } from "../shared/operators";
 
 // For each table, get all column that are indexed
 // Walk the where expression.
@@ -118,10 +119,6 @@ const computeColumnConstraints = (expression: ExpressionNode): Constraint[] => {
     return [];
 };
 
-const bubbleNulls = (func: (a: any, b: any) => any) => {
-    return (a: any, b: any) => (a === null || b === null ? null : func(a, b));
-};
-
 const rowEqual = (a: any[], b: any[]) => {
     if (a.length !== b.length) {
         return false;
@@ -198,33 +195,6 @@ const applyCompoundOperator = (
     }
 
     throw new Error("unsupported operation");
-};
-
-/** Binary operator tokens to JS functions. */
-const OPERATORS: Partial<Record<Operator, (...args: any[]) => any>> = {
-    multiply: bubbleNulls((a, b) => a * b),
-    greaterThan: bubbleNulls((a, b) => a > b),
-    lessThan: bubbleNulls((a, b) => a < b),
-    lessThanEqual: bubbleNulls((a, b) => a <= b),
-    add: bubbleNulls((a, b = undefined) => (b === undefined ? a : a + b)),
-    subtract: bubbleNulls((a, b = undefined) => (b === undefined ? -a : a - b)),
-    divide: bubbleNulls((a, b) => a / b),
-    and: bubbleNulls((a, b) => a && b),
-    or: (a, b) => a || b,
-    between: (a, b, c) => {
-        if (a === null) {
-            return null;
-        }
-        if (b === null || c === null) {
-            return false;
-        }
-        return a >= b && a <= c;
-    },
-    greaterThanEqual: bubbleNulls((a, b) => a >= b),
-    equal: bubbleNulls((a, b) => a === b),
-    is: (a, b) => a === b,
-    notEqual: (a, b) => a !== b,
-    not: (a) => !a,
 };
 
 /** Aggregation functions. */

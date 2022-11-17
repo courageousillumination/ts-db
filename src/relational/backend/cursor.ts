@@ -71,6 +71,11 @@ export class Cursor {
         return this.position < this.data.length;
     }
 
+    public getColumnByIndex(index: number) {
+        const value = this.data[this.position][index];
+        return value !== undefined ? value : null;
+    }
+
     public getColumn(name: string) {
         const index = this.columns.findIndex((x) => x.name === name);
         if (index === -1) {
@@ -91,5 +96,9 @@ export class Cursor {
 
     public writeColumn(index: number, value: unknown) {
         this.data[this.position][index] = value;
+    }
+
+    public isEmpty() {
+        return this.data.length === 0;
     }
 }

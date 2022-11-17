@@ -1,79 +1,169 @@
-import { Backend } from "../backend/backend";
-import { Expression } from "../parser/ast/expression";
-import { Statement } from "../parser/ast/statement";
-import { TokenType } from "../parser/tokenizer";
-import { ByteCode, Operation, SimpleOpCode } from "./bytecode";
+import { Backend } from "../../../backend/backend";
+import { ExpressionNode } from "../../../parser/ast/expression";
+import { SimpleSelectNode } from "../../../parser/ast/select";
+import { StatementNode } from "../../../parser/ast/statement";
+import { BytecodeInstruction, OpCode } from "../bytecode";
 
-const getOpcodeFromOperator = (operator: TokenType): SimpleOpCode => {
-    switch (operator) {
-        case "star":
-            return "multiply";
-        case "plus":
-            return "add";
-        case "slash":
-            return "divide";
-        case "minus":
-            return "subtract";
-        default:
-            throw new Error(`Unknown operator: ${operator}`);
+export class Complier {
+    private compliedCode: BytecodeInstruction[] = [];
+    private activeTables: string[] = [];
+    private cursors: Map<string, number> = new Map();
+    constructor(private readonly backend: Backend) {}
+
+    public compile(statement: StatementNode): BytecodeInstruction[] {
+        this.reset();
+        switch (statement.type) {
+            case "select":
+                this.compileSelect(statement);
+                break;
+            default:
+                this.error("Unhandled statement");
+        }
+        return this.compliedCode;
     }
-};
 
-export const compile = (statement: Statement, backend: Backend): ByteCode => {
-    switch (statement.type) {
-        case "select":
-            // Hacked together for now
-            let loopBody: ByteCode = [];
-            for (const column of statement.selectClause.columns) {
-                if (column.type === "wildcard") {
-                    // TODO: Read from the backend about all of the columns on the table.
-                    continue;
+    private compileSelect(select: SimpleSelectNode) {
+        // We'll start with a single table
+        this.activeTables = select.tables.map((x) => x.tableName);
+        const cursors = [];
+        for (const table of this.activeTables) {
+            const cursorId = this.createCursor(table);
+            cursors.push(cursorId);
+            this.emit(OpCode.OPEN_CURSOR, [cursorId, table]);
+        }
+
+        // Rewind all cursors. We'll save each of these so we can patch in
+        // the jump locations later.
+        const rewindJump = [];
+        for (const cursor of cursors) {
+            const rewind = this.emit(OpCode.REWIND, [cursor]);
+            rewindJump.push(rewind);
+        }
+
+        // Where will jump over the columns
+        let whereJump;
+        if (select.where) {
+            this.compileExpression(select.where);
+            whereJump = this.emit(OpCode.JUMP_FALSE, []); // Need to patch this.
+        }
+
+        // Emit the columns
+        let columnCount = 0;
+        for (const column of select.columns) {
+            if (column.type === "expression") {
+                this.compileExpression(column.expression);
+                columnCount++;
+            } else if (column.type === "wildcard") {
+                for (const table of this.activeTables) {
+                    const cursor = this.getCursorId(table);
+                    const columns = this.backend.getColumns(table);
+                    for (let i = 0; i < columns.length; i++) {
+                        this.emit(OpCode.COLUMN, [cursor, i]);
+                        columnCount++;
+                    }
                 }
-                loopBody = [
-                    ...compileExpression(column.expression, backend),
-                    ...loopBody,
-                ];
             }
-            // Put in the last piecs of the loop.
-            const code: Operation[] = [
-                { type: "openCursor" },
-                ...loopBody,
-                {
-                    type: "resultRow",
-                    columnCount: statement.selectClause.columns.length,
-                },
-                { type: "next", jump: -(loopBody.length + 1) },
-            ];
-            return code;
-        default:
-            throw new Error(`Unhandled statement ${statement.type}`);
-    }
-};
+        }
+        const result_row = this.emit(OpCode.RESULT_ROW, [columnCount]);
 
-// TODO: Add statements later.
-export const compileExpression = (
-    expression: Expression,
-    backend: Backend
-): ByteCode => {
-    switch (expression.type) {
-        case "value":
-            return [{ type: "constant", value: expression.value }];
-        case "binary":
-            const left = compileExpression(expression.left, backend);
-            const right = compileExpression(expression.right, backend);
-            return [
-                ...right,
-                ...left,
-                { type: getOpcodeFromOperator(expression.operator) },
-            ];
-        case "column":
-            return [
-                {
-                    type: "column",
-                    index: backend.getColumnIndex("foo", expression.column),
-                },
-            ]; // TODO: Actually do this lookup.
-        default:
-            throw Error("Unable to compile expression");
+        // End of the inner most loop. We can point the where clause down here now.
+        if (whereJump) {
+            this.compliedCode[whereJump].arguments.push(result_row + 1);
+        }
+
+        // Now we need to advance all cursors, but we should do so in the reverse order as
+        // we set them up.
+        for (let i = rewindJump.length - 1; i >= 0; i--) {
+            const next = this.emit(OpCode.NEXT, [
+                cursors[i],
+                rewindJump[i] + 1,
+            ]);
+            this.compliedCode[rewindJump[i]].arguments.push(next + 1);
+        }
     }
-};
+
+    private compileExpression(expression: ExpressionNode) {
+        switch (expression.subType) {
+            case "literal-value":
+                this.emit(OpCode.VALUE, [expression.value]);
+                break;
+            case "operator":
+                for (const arg of expression.arguments) {
+                    this.compileExpression(arg);
+                }
+                this.emit(OpCode.OPERATOR, [
+                    expression.operator,
+                    expression.arguments.length,
+                ]);
+
+                if (expression.negate) {
+                    this.emit(OpCode.OPERATOR, ["not", 1]);
+                }
+
+                break;
+            case "column":
+                const [cursorId, columnId] = this.getColumnAndCursorId(
+                    expression.columnName,
+                    expression.tableName
+                );
+                this.emit(OpCode.COLUMN, [cursorId, columnId]);
+                break;
+            default:
+                this.error("Unhandled expression");
+        }
+    }
+
+    private getColumnAndCursorId(column: string, t?: string): [number, number] {
+        // Find the table that we care about
+        const table = t || this.findTableWithColumn(column);
+
+        // Find the associated cursor
+        const cursorId = this.getCursorId(table);
+
+        // Find the column index in that table
+        const columnIndex = this.backend.getColumnIndex(table, column);
+        return [cursorId, columnIndex];
+    }
+
+    private createCursor(table: string) {
+        const id = this.cursors.size;
+        this.cursors.set(table, id);
+        return id;
+    }
+
+    private findTableWithColumn(columnName: string) {
+        const candidates = [];
+        for (const table of this.activeTables) {
+            if (this.backend.getColumnIndex(table, columnName) !== -1) {
+                candidates.push(table);
+            }
+        }
+        if (candidates.length !== 1) {
+            this.error("Bad column");
+        }
+        return candidates[0];
+    }
+
+    private getCursorId(table: string) {
+        const id = this.cursors.get(table);
+        if (id === undefined) {
+            this.error("Bad table name");
+        }
+        return id;
+    }
+
+    private emit(opcode: OpCode, args: any[]) {
+        this.compliedCode.push({ opcode, arguments: args });
+        return this.compliedCode.length - 1;
+    }
+
+    private reset() {
+        this.activeTables = [];
+        this.compliedCode = [];
+        this.cursors.clear();
+    }
+
+    private error(msg: string): never {
+        throw new Error(`Compilation error: ${msg}`);
+    }
+}
