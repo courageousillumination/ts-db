@@ -3088,51 +3088,6 @@ INSERT INTO t9 VALUES(907,251,60,164,245,'table tn9 row 98')
 statement ok
 INSERT INTO t1 VALUES(996,297,177,577,602,'table tn1 row 128')
 
-query IIIIIT rowsort all1
-SELECT * FROM t1
-----
-768 values hashing to 5d3fe674077ba48f8afa1c6f4e61ced4
-
-query IIIIIT rowsort all2
-SELECT * FROM t2
-----
-678 values hashing to 09dd0a67e7c6bbb0b2aa2bc8364b9cb8
-
-query IIIIIT rowsort all3
-SELECT * FROM t3
-----
-774 values hashing to a4da0dfc78895ffb5c59ae7f49afed54
-
-query IIIIIT rowsort all4
-SELECT * FROM t4
-----
-666 values hashing to 66f651904b7b83fadcbddc7f15fc16b1
-
-query IIIIIT rowsort all5
-SELECT * FROM t5
-----
-660 values hashing to 168733c3c947e4cd1b1cad5b997ece30
-
-query IIIIIT rowsort all6
-SELECT * FROM t6
-----
-552 values hashing to 1498df6d8ab3f812e84f8e318dc53704
-
-query IIIIIT rowsort all7
-SELECT * FROM t7
-----
-660 values hashing to fa70f972b3a5f3339f77037444cb54d5
-
-query IIIIIT rowsort all8
-SELECT * FROM t8
-----
-654 values hashing to 55dc70aa8548b692aa3a7f2156fdeea5
-
-query IIIIIT rowsort all9
-SELECT * FROM t9
-----
-588 values hashing to be47bb47837e44b32abdcfb5f1645153
-
 statement ok
 CREATE INDEX t1i0 ON t1(a1,b1,c1,d1,e1,x1)
 
@@ -3181,83 +3136,7 @@ CREATE INDEX t7e7 ON t7(e7)
 statement ok
 CREATE INDEX t8all ON t8(e8 DESC, d8 ASC, c8 DESC, b8 ASC, a8 DESC)
 
-query IIIIIT rowsort all1
-SELECT * FROM t1
-----
-768 values hashing to 5d3fe674077ba48f8afa1c6f4e61ced4
-
-query IIIIIT rowsort all2
-SELECT * FROM t2
-----
-678 values hashing to 09dd0a67e7c6bbb0b2aa2bc8364b9cb8
-
-query IIIIIT rowsort all3
-SELECT * FROM t3
-----
-774 values hashing to a4da0dfc78895ffb5c59ae7f49afed54
-
-query IIIIIT rowsort all4
-SELECT * FROM t4
-----
-666 values hashing to 66f651904b7b83fadcbddc7f15fc16b1
-
-query IIIIIT rowsort all5
-SELECT * FROM t5
-----
-660 values hashing to 168733c3c947e4cd1b1cad5b997ece30
-
-query IIIIIT rowsort all6
-SELECT * FROM t6
-----
-552 values hashing to 1498df6d8ab3f812e84f8e318dc53704
-
-query IIIIIT rowsort all7
-SELECT * FROM t7
-----
-660 values hashing to fa70f972b3a5f3339f77037444cb54d5
-
-query IIIIIT rowsort all8
-SELECT * FROM t8
-----
-654 values hashing to 55dc70aa8548b692aa3a7f2156fdeea5
-
-query IIIIIT rowsort all9
-SELECT * FROM t9
-----
-588 values hashing to be47bb47837e44b32abdcfb5f1645153
-
 query T valuesort
-  SELECT d6 FROM t6
-   WHERE (b6=507 AND 821=a6 AND 751=c6 AND d6=35 AND 257=e6)
-      OR e6 in (634,241,847,431,972)
-EXCEPT
-  SELECT b5 FROM t5
-   WHERE NOT ((640=e5 AND b5=971 AND d5=263 AND 522=a5)
-           OR a5 in (544,342,615,522,311,626,319,99,235,335)
-           OR d5 in (343,24,495,132,779,919,792,269,616,811))
-UNION
-  SELECT a7 FROM t7
-   WHERE (131=d7 OR b7=105 OR d7=673)
-      OR (c7=344 AND 456=e7)
-UNION ALL
-  SELECT a8 FROM t8
-   WHERE (a8=841 OR a8=129)
-      OR (254=a8 AND 48=d8)
-      OR (900=a8 AND b8=690)
-UNION
-  SELECT c2 FROM t2
-   WHERE e2 in (940,339,433,463,572,411,213,56,131,698,965)
-      OR b2 in (504,681,714,966,292,90,38,285,8,509,297,414,414,676)
-EXCEPT
-  SELECT e1 FROM t1
-   WHERE NOT ((b1=179))
-UNION
-  SELECT c9 FROM t9
-   WHERE (938=d9 OR d9=145 OR b9=827)
-      OR (b9=326)
-UNION ALL
-  SELECT c4 FROM t4
-   WHERE e4 in (879,438,37,760,217,217,835,307,38,132,63)
-      OR (c4=521)
+SELECT b5+342+a6, d4+810+a1, c8, a1, d6+b1, c7+554, x2 FROM t8, t7, t1, t4, t5, t2, t6 WHERE c5 in (527,894,649,941,101,198,313) AND e7 in (254,456,197,851,455,356,793,624) AND b4 in (765,593,295,849,708,917) AND e8=980 AND d6 in (590,73,34,942,970,786,21,35) AND a1=b2 AND c2=a5
 ----
 41 values hashing to bbf619d1c2aae1fc385fb08bddcae829

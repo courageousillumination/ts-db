@@ -1,7 +1,10 @@
 import { ColumnDefinition } from "../parser/ast/create";
 
+let COLUMN_COUNT = 0;
 export class Cursor {
     private position = 0;
+
+    public currentIndexingValue?: { column: number; value: unknown };
     constructor(
         private readonly data: unknown[][],
         private readonly columns: ColumnDefinition[]
@@ -9,7 +12,18 @@ export class Cursor {
 
     /** Advance to the next row in the table. */
     public next() {
-        this.position++;
+        if (!this.currentIndexingValue) {
+            this.position++;
+        } else {
+            const { column, value } = this.currentIndexingValue;
+            do {
+                this.position++;
+            } while (
+                this.position < this.data.length &&
+                this.data[this.position][column] !== value
+            );
+        }
+        return this.hasData();
     }
 
     public rewind() {
@@ -25,6 +39,30 @@ export class Cursor {
         return this.data.find((x) => x[columnIndex] === id);
     }
 
+    public seekIndex(columnName: string, value: unknown) {
+        const columnIndex = this.columns.findIndex(
+            (x) => x.name === columnName
+        );
+        if (columnIndex === -1) {
+            throw new Error("No column");
+        }
+        this.currentIndexingValue = { column: columnIndex, value };
+        this.rewind();
+
+        if (this.data[this.position][columnIndex] !== value) {
+            this.next();
+        }
+    }
+
+    public hasColumn(name: string) {
+        const columnIndex = this.columns.findIndex((x) => x.name === name);
+        return columnIndex !== -1;
+    }
+
+    public clearIndex() {
+        this.currentIndexingValue = undefined;
+    }
+
     public getRow() {
         return this.data[this.position];
     }
@@ -38,8 +76,13 @@ export class Cursor {
         if (index === -1) {
             throw new Error("Could not find column");
         }
+        COLUMN_COUNT++;
         const value = this.data[this.position][index];
         return value !== undefined ? value : null;
+    }
+
+    public debug() {
+        console.log(COLUMN_COUNT);
     }
 
     public writeRecord(record: unknown[]) {

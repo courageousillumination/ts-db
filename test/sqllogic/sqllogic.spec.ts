@@ -32,10 +32,10 @@ const sqliteAll = (db: sqlite3.Database, input: string) => {
 const FILE_BASE = "./test/sqllogic/test-files/";
 
 const testFiles = [
-    // "select0.sql",
-    "select1.sql",
-    "select2.sql",
-    "select3.sql",
+    "select0.sql",
+    // "select1.sql",
+    // "select2.sql",
+    // "select3.sql",
     // WIP
 
     // Select 4 and 5 works in theory, but it is super slow because of the
@@ -67,6 +67,7 @@ describe("sqllogic", () => {
         const queries = records
             .filter((x) => x.type === "query")
             .map(getQueryString);
+        // .slice(1050, 1060);
         const statements = records
             .filter((x) => x.type === "statement")
             .map(getQueryString);
@@ -77,7 +78,7 @@ describe("sqllogic", () => {
             });
         });
 
-        describe("execution", () => {
+        describe.only("execution", () => {
             let client: RelationalClient;
             let reference: sqlite3.Database;
             beforeAll(async () => {
@@ -94,6 +95,8 @@ describe("sqllogic", () => {
             });
 
             test.each(queries)("executes %s", async (x) => {
+                console.log("starting", x);
+                // if (1 === 1) return;
                 const result = client.execute(x);
                 const referenceResult = await sqliteAll(reference, x);
 

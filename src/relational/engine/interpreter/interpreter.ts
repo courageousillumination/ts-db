@@ -4,12 +4,119 @@ import { CreateIndexNode, CreateNode } from "../../parser/ast/create";
 import {
     ExpressionNode,
     FunctionCallExpressionNode,
+    LiteralValueExpresisonNode,
     Operator,
 } from "../../parser/ast/expression";
 import { InsertNode } from "../../parser/ast/insert";
 import { CompoundSelect, SimpleSelectNode } from "../../parser/ast/select";
 import { StatementNode } from "../../parser/ast/statement";
 import { UpdateNode } from "../../parser/ast/update";
+
+// For each table, get all column that are indexed
+// Walk the where expression.
+//      If you encounter a bare AND/OR combine the results from either side.
+//      If you encounter an equality with an plain index on one side and a literal add that to the index set.
+//      Same for `in`
+//      If you can index a dependency I guess do that [HARD]
+
+const unionConstraints = (a: Constraint[], b: Constraint[]) => {
+    const union = [...a];
+    for (const constraint of b) {
+        const existing = union.find((x) => x.column === constraint.column);
+        if (existing) {
+            const leftNums = existing.constraints;
+            const rightNums = constraint.constraints;
+            existing.constraints = [...new Set([...leftNums, ...rightNums])];
+        } else {
+            union.push(constraint);
+        }
+    }
+    return union;
+};
+
+const intersectConstraints = (a: Constraint[], b: Constraint[]) => {
+    const intersection = [...a];
+
+    for (const constraint of b) {
+        const existing = intersection.find(
+            (x) => x.column === constraint.column
+        );
+        if (existing) {
+            // TODO: Need to better handle this case...
+            return [];
+        } else {
+            intersection.push(constraint);
+        }
+    }
+    return intersection;
+};
+
+type Constraint = { column: string; constraints: number[] };
+
+const getEquiConstraints = (
+    left: ExpressionNode,
+    right: ExpressionNode
+): Constraint[] | undefined => {
+    if (left.subType !== "column") {
+        // Where the right is a column is handled higher up.
+        return;
+    }
+
+    if (right.subType !== "literal-value") {
+        // We could handle literal computations, but right now just values.
+        return;
+    }
+
+    return [{ column: left.columnName, constraints: [right.value as number] }];
+};
+
+const computeColumnConstraints = (expression: ExpressionNode): Constraint[] => {
+    if (expression.subType === "operator") {
+        switch (expression.operator) {
+            case "and":
+                return intersectConstraints(
+                    computeColumnConstraints(expression.arguments[0]),
+                    computeColumnConstraints(expression.arguments[1])
+                );
+            case "or":
+                return unionConstraints(
+                    computeColumnConstraints(expression.arguments[0]),
+                    computeColumnConstraints(expression.arguments[1])
+                );
+            case "equal":
+                const left = expression.arguments[0];
+                const right = expression.arguments[1];
+                return (
+                    getEquiConstraints(left, right) ||
+                    getEquiConstraints(right, left) ||
+                    []
+                );
+            default:
+                return [];
+        }
+    } else if (expression.subType === "in") {
+        if (expression.expression.subType !== "column") {
+            return [];
+        }
+
+        if (!Array.isArray(expression.list)) {
+            return [];
+        }
+        const values: LiteralValueExpresisonNode[] = expression.list.filter(
+            (x) => x.subType === "literal-value"
+        ) as any;
+        if (values.length !== expression.list.length) {
+            return [];
+        }
+        return [
+            {
+                column: expression.expression.columnName,
+                constraints: [...new Set(values.map((x) => x.value as number))],
+            },
+        ];
+    }
+    return [];
+};
 
 const bubbleNulls = (func: (a: any, b: any) => any) => {
     return (a: any, b: any) => (a === null || b === null ? null : func(a, b));
@@ -165,6 +272,55 @@ const isAggregate = (expression: ExpressionNode): boolean => {
             return !!AGGREGATORS[expression.functionName];
         default:
             throw new Error("unhandeld expression type");
+    }
+};
+
+const advanceCursors = (cursors: Cursor[], constraints: Constraint[]) => {
+    for (let i = 0; i < cursors.length; i++) {
+        if (i > 4) {
+            console.log("next", i);
+        }
+        // Try to advance the cursor to the next row.
+        if (cursors[i].next()) {
+            break;
+        }
+
+        // See if we have constraints we should apply on this cursor
+        const cursorConstraint = constraints.find((x) =>
+            cursors[i].hasColumn(x.column)
+        );
+        if (cursorConstraint) {
+            const { value } = cursors[i].currentIndexingValue || {
+                value: 0,
+            };
+            const index = cursorConstraint.constraints.findIndex(
+                (x) => x === value
+            );
+            if (index < cursorConstraint.constraints.length - 1) {
+                cursors[i].seekIndex(
+                    cursorConstraint.column,
+                    cursorConstraint.constraints[index + 1]
+                );
+                break;
+            }
+
+            // If we can move to the next value, do so then break.
+        }
+
+        // We've reached the real end of this cursor.
+        if (i === cursors.length - 1) {
+            break;
+        }
+
+        if (cursorConstraint) {
+            cursors[i].seekIndex(
+                cursorConstraint.column,
+                cursorConstraint.constraints[0]
+            );
+        } else {
+            // We're doing a full table scan
+            cursors[i].rewind();
+        }
     }
 };
 
@@ -356,6 +512,27 @@ export class Interpreter {
             cursors.push(cursor);
         }
 
+        const useConstraints = cursors.length > 2;
+
+        const constraints: Constraint[] =
+            statement.where && useConstraints
+                ? computeColumnConstraints(statement.where)
+                : [];
+
+        console.log(constraints);
+        if (constraints.length) {
+            for (const cursor of cursors) {
+                const cursorConstraint = constraints.find((x) =>
+                    cursor.hasColumn(x.column)
+                );
+                if (cursorConstraint) {
+                    cursor.seekIndex(
+                        cursorConstraint.column,
+                        cursorConstraint.constraints[0]
+                    );
+                }
+            }
+        }
         // We'll start accumulating if any of our selects have an aggregate in them.
         this.isAccumulating = statement.columns.some(
             (x) => x.type === "expression" && isAggregate(x.expression)
@@ -363,7 +540,6 @@ export class Interpreter {
         this.aggregateAccumulator = new Map();
         const requiresSort = !!statement.orderBy;
         const sortlist = [];
-
         // Loop until the last cursor has no more data.
         while (cursors[cursors.length - 1].hasData()) {
             // First check if this current row is going to be vaild
@@ -384,14 +560,7 @@ export class Interpreter {
             }
 
             // Find the next cursor to advance, starting at the end.
-            for (let i = 0; i < cursors.length; i++) {
-                cursors[i].next();
-                if (cursors[i].hasData() || i === cursors.length - 1) {
-                    break;
-                }
-                // This cursor has reached the end, keep going
-                cursors[i].rewind();
-            }
+            advanceCursors(cursors, constraints);
         }
 
         if (this.isAccumulating) {
