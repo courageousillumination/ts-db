@@ -6,16 +6,16 @@ import { BytecodeInstruction, OpCode } from "../bytecode";
 
 export class VirtualMachine {
     /** Mixed type stack. */
-    private stack: unknown[] = [];
+    public stack: unknown[] = [];
 
     /** Code being executed. */
-    private code: BytecodeInstruction[] = [];
+    public code: BytecodeInstruction[] = [];
 
     /** Current program counter. */
-    private pc: number = 0;
+    public pc: number = 0;
 
     /** Open cursors */
-    private cursors: Record<number, Cursor> = {};
+    public cursors: Record<number, Cursor> = {};
 
     constructor(private readonly backend: Backend) {}
 
@@ -26,49 +26,61 @@ export class VirtualMachine {
     /** Runs the VM until a new row is encountered. */
     public *step() {
         while (this.pc < this.code.length) {
-            const instruction = this.code[this.pc++];
-            switch (instruction.opcode) {
-                case OpCode.VALUE:
-                    this.push(instruction.arguments[0]);
-                    break;
-                case OpCode.OPERATOR:
-                    this.applyOperator(instruction);
-                    break;
-                case OpCode.OPEN_CURSOR:
-                    this.openCursor(instruction);
-                    break;
-                case OpCode.REWIND:
-                    this.rewind(instruction);
-                    break;
-                case OpCode.NEXT:
-                    this.next(instruction);
-                    break;
-                case OpCode.COLUMN:
-                    this.column(instruction);
-                    break;
-                case OpCode.RESULT_ROW:
-                    // NOTE: Only yield here
-                    yield this.resultRow(instruction);
-                    break;
-                case OpCode.JUMP_FALSE:
-                    if (!this.pop()) {
-                        this.pc = instruction.arguments[0];
-                    }
-                    break;
-                case OpCode.JUMP:
-                    this.pc = instruction.arguments[0];
-                    break;
-                case OpCode.POP:
-                    this.pop();
-                    break;
-                case OpCode.COPY:
-                    const value = this.pop();
-                    this.push(value);
-                    this.push(value);
-                    break;
-                default:
-                    this.error(`Unhandled opcode: ${instruction.opcode}`);
+            const result = this.stepInstruction();
+            if (result) {
+                yield result;
             }
+        }
+    }
+
+    public stepInstruction() {
+        if (this.pc >= this.code.length) {
+            return;
+        }
+        const instruction = this.code[this.pc++];
+        switch (instruction.opcode) {
+            case OpCode.VALUE:
+                this.push(instruction.arguments[0]);
+                break;
+            case OpCode.OPERATOR:
+                this.applyOperator(instruction);
+                break;
+            case OpCode.OPEN_CURSOR:
+                this.openCursor(instruction);
+                break;
+            case OpCode.REWIND:
+                this.rewind(instruction);
+                break;
+            case OpCode.NEXT:
+                this.next(instruction);
+                break;
+            case OpCode.COLUMN:
+                this.column(instruction);
+                break;
+            case OpCode.RESULT_ROW:
+                // NOTE: Only yield here
+                return this.resultRow(instruction);
+
+            case OpCode.JUMP_FALSE:
+                if (!this.pop()) {
+                    this.pc = instruction.arguments[0];
+                }
+                break;
+            case OpCode.JUMP:
+                this.pc = instruction.arguments[0];
+                break;
+            case OpCode.POP:
+                this.pop();
+                break;
+            case OpCode.COPY:
+                const value = this.pop();
+                this.push(value);
+                this.push(value);
+                break;
+            case OpCode.HALT:
+                return;
+            default:
+                this.error(`Unhandled opcode: ${instruction.opcode}`);
         }
     }
 

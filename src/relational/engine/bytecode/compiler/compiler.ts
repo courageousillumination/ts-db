@@ -20,6 +20,7 @@ export class Complier {
             default:
                 this.error("Unhandled statement");
         }
+        this.emit(OpCode.HALT, []);
         return this.compliedCode;
     }
 

@@ -2,12 +2,13 @@ import { ColumnDefinition } from "../parser/ast/create";
 
 let COLUMN_COUNT = 0;
 export class Cursor {
-    private position = 0;
+    public position = 0;
 
     public currentIndexingValue?: { column: number; value: unknown };
     constructor(
         private readonly data: unknown[][],
-        private readonly columns: ColumnDefinition[]
+        private readonly columns: ColumnDefinition[],
+        public readonly tableName: string
     ) {}
 
     /** Advance to the next row in the table. */

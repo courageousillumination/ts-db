@@ -1,5 +1,5 @@
 import { useContext } from "react";
-import { HighlightContext, Highlight } from "./HighlightContext";
+import { SourceContext, Highlight } from "../contexts/SourceContext";
 
 interface Fragment {
     text: string;
@@ -43,8 +43,8 @@ const getHighlightFragments = (source: string, highlights: Highlight[]) => {
 /**
  * Renders the source code.
  */
-export const Source: React.FC<{ source: string }> = ({ source }) => {
-    const { highlights } = useContext(HighlightContext);
+export const Source: React.FC = () => {
+    const { source, highlights } = useContext(SourceContext);
     const fragments = getHighlightFragments(source, highlights);
     return (
         <pre>

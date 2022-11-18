@@ -46,6 +46,7 @@ export enum OpCode {
     JUMP = "jump",
     COPY = "copy",
     POP = "pop",
+    HALT = "halt",
 
     OPEN_CURSOR = "open_cursor",
     REWIND = "rewind",

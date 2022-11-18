@@ -32,6 +32,8 @@ class RelationalClient {
                     result.push(row);
                 }
 
+                console.log(result);
+
                 result.sort((a: any, b: any) => a[0] - b[0]);
             } else if (engine === "interpreter") {
                 // Using tree-walk interpreter

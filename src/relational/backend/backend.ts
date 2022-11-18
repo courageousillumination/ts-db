@@ -1,7 +1,7 @@
 import { ColumnDefinition } from "../parser/ast/create";
 import { Cursor } from "./cursor";
 
-interface Table {
+export interface Table {
     name: string;
     columns: ColumnDefinition[];
     data: unknown[][];
@@ -16,7 +16,7 @@ export class Backend {
     }
     public createCursor(name: string) {
         const table = this.getTableByName(name);
-        return new Cursor(table.data, table.columns);
+        return new Cursor(table.data, table.columns, table.name);
     }
 
     public getColumnIndex(name: string, column: string) {
@@ -31,6 +31,11 @@ export class Backend {
 
     public getColumns(table: string) {
         return this.getTableByName(table).columns;
+    }
+
+    // ONLY FOR DISPLAY/DEMO USE
+    public getTables() {
+        return this.tables;
     }
 
     private getTableByName(name: string) {

@@ -1,9 +1,12 @@
 import { useContext } from "react";
-import { parse } from "../relational";
-import { ExpressionNode } from "../relational/parser/ast/expression";
-import { SelectNode } from "../relational/parser/ast/select";
-import { StatementNode } from "../relational/parser/ast/statement";
-import { HighlightContext } from "./HighlightContext";
+import { parse } from "../../relational";
+import { ExpressionNode } from "../../relational/parser/ast/expression";
+import {
+    SelectNode,
+    SimpleSelectNode,
+} from "../../relational/parser/ast/select";
+import { StatementNode } from "../../relational/parser/ast/statement";
+import { SourceContext } from "../contexts/SourceContext";
 
 const checkedParse = (source: string) => {
     try {
@@ -16,7 +19,7 @@ const checkedParse = (source: string) => {
 const Expression: React.FC<{ expression: ExpressionNode }> = ({
     expression,
 }) => {
-    const { setHighlights, highlights } = useContext(HighlightContext);
+    const { setHighlights, highlights } = useContext(SourceContext);
     let isHighlighted = false;
     for (const { start, end } of highlights) {
         if (
@@ -65,10 +68,10 @@ const Expression: React.FC<{ expression: ExpressionNode }> = ({
     );
 };
 
-const SelectStatement: React.FC<{ statement: SelectNode }> = ({
+const SelectStatement: React.FC<{ statement: SimpleSelectNode }> = ({
     statement,
 }) => {
-    const { setHighlights, highlights } = useContext(HighlightContext);
+    const { setHighlights, highlights } = useContext(SourceContext);
     let isHighlighted = false;
     for (const { start, end } of highlights) {
         if (
@@ -124,7 +127,8 @@ export const Statement: React.FC<{ statement: StatementNode }> = ({
     }
 };
 
-export const ParseTree: React.FC<{ source: string }> = ({ source }) => {
+export const ParseTree: React.FC = () => {
+    const { source } = useContext(SourceContext);
     const parseTree = checkedParse(source);
     if (typeof parseTree === "string") {
         return <pre>{parseTree}</pre>;
