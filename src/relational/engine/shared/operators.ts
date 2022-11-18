@@ -29,4 +29,5 @@ export const OPERATORS: Partial<Record<Operator, (...args: any[]) => any>> = {
     is: (a, b) => a === b,
     notEqual: (a, b) => a !== b,
     not: (a) => !a,
+    negate: bubbleNulls((a) => -a),
 };

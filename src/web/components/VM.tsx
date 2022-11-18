@@ -20,7 +20,10 @@ export const VM: React.FC = () => {
     const [steps, setSteps] = useState(0);
     const [accumulatedResult, setAccumulatedResult] = useState<unknown[]>([]);
     const { source } = useContext(SourceContext);
-    const { backend } = useContext(BackendContext);
+    const { backend, setCursors } = useContext(BackendContext);
+    const [running, setRunning] = useState(false);
+    const [rate, setRate] = useState("1");
+
     const vm = useMemo(() => {
         const bytecode = checkedCompile(source, backend);
         if (typeof bytecode === "string") {
@@ -33,34 +36,77 @@ export const VM: React.FC = () => {
     }, [source, backend]);
 
     useEffect(() => {
+        const numRate = parseFloat(rate);
+        if (!numRate || !running) {
+            return;
+        }
+        const id = setInterval(() => {
+            const res = vm?.stepInstruction();
+            if (res) {
+                setAccumulatedResult((x) => {
+                    return [...x, res];
+                });
+            }
+            setSteps((s) => s + 1);
+        }, numRate * 1000);
+        return () => {
+            clearInterval(id);
+        };
+    }, [running, rate, vm, setSteps]);
+
+    useEffect(() => {
         setSteps(0);
         setAccumulatedResult([]);
+        setRunning(false);
     }, [vm, setSteps, setAccumulatedResult]);
+
+    useEffect(() => {
+        if (vm?.cursors) {
+            setCursors(
+                Object.keys(vm.cursors).map((x) => ({
+                    id: parseInt(x),
+                    cursor: vm.cursors[parseInt(x)],
+                }))
+            );
+        }
+    }, [vm?.cursors, steps]);
 
     if (vm === null) {
         return null;
     }
     return (
         <div>
-            <button
-                onClick={() => {
-                    const res = vm.stepInstruction();
-                    if (res) {
-                        setAccumulatedResult((x) => {
-                            return [...x, res];
-                        });
-                    }
-                    setSteps(() => steps + 1);
-                }}
-            >
-                Step
-            </button>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <button
+                    onClick={() => {
+                        const res = vm.stepInstruction();
+                        if (res) {
+                            setAccumulatedResult((x) => {
+                                return [...x, res];
+                            });
+                        }
+                        setSteps(() => steps + 1);
+                    }}
+                >
+                    Step
+                </button>
+                <label>Run Rate:</label>
+                <input
+                    value={`${rate}`}
+                    onChange={(e) => {
+                        setRate(e.target.value);
+                    }}
+                />
+                <button onClick={() => setRunning(!running)}>
+                    {running ? "Stop" : "Run"}{" "}
+                </button>
+            </div>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <div>
                     <h5>Bytecode</h5>
                     {vm.code.map((x, i) => {
                         return (
-                            <div style={{ display: "flex" }}>
+                            <div style={{ display: "flex", gap: "8px" }}>
                                 <span
                                     style={{
                                         width: "16px",
@@ -69,15 +115,11 @@ export const VM: React.FC = () => {
                                 >
                                     {i === vm.pc ? ">" : null}
                                 </span>
-                                <span
-                                    style={{
-                                        width: "16px",
-                                        fontFamily: "monospace",
-                                    }}
-                                >
-                                    {i}
-                                </span>
-                                <DisplayBytecodeInstruction instruction={x} />
+
+                                <DisplayBytecodeInstruction
+                                    instruction={x}
+                                    index={i}
+                                />
                             </div>
                         );
                     })}
@@ -85,7 +127,9 @@ export const VM: React.FC = () => {
                 <div>
                     <h5>Stack</h5>
                     {vm.stack.map((x) => (
-                        <div>{JSON.stringify(x)}</div>
+                        <div style={{ fontFamily: "monospace" }}>
+                            {JSON.stringify(x)}
+                        </div>
                     ))}
                 </div>
                 <div>

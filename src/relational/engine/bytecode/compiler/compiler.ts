@@ -9,6 +9,7 @@ export class Complier {
     private activeTables: string[] = [];
     private nextCursor = 0;
     private cursors: Map<string, number> = new Map();
+    private currentIndent: number = 0;
     constructor(private readonly backend: Backend) {}
 
     public compile(statement: StatementNode): BytecodeInstruction[] {
@@ -40,6 +41,7 @@ export class Complier {
         for (const cursor of cursors) {
             const rewind = this.emit(OpCode.REWIND, [cursor]);
             rewindJump.push(rewind);
+            this.indent();
         }
 
         // Where will jump over the columns
@@ -65,6 +67,7 @@ export class Complier {
                 rewindJump[i] + 1,
             ]);
             this.compliedCode[rewindJump[i]].arguments.push(next + 1);
+            this.unindent();
         }
     }
 
@@ -207,7 +210,11 @@ export class Complier {
     }
 
     private emit(opcode: OpCode, args: any[]) {
-        this.compliedCode.push({ opcode, arguments: args });
+        this.compliedCode.push({
+            opcode,
+            arguments: args,
+            debug: { indent: this.currentIndent },
+        });
         return this.compliedCode.length - 1;
     }
 
@@ -219,5 +226,12 @@ export class Complier {
 
     private error(msg: string): never {
         throw new Error(`Compilation error: ${msg}`);
+    }
+
+    private indent() {
+        this.currentIndent++;
+    }
+    private unindent() {
+        this.currentIndent--;
     }
 }

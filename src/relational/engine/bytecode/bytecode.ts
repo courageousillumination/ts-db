@@ -66,4 +66,9 @@ export enum OpCode {
 export interface BytecodeInstruction {
     opcode: OpCode;
     arguments: any[];
+
+    // Information for debugging
+    debug?: {
+        indent: number;
+    };
 }

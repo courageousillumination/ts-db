@@ -1,8 +1,11 @@
 import React, { useState, createContext, useEffect } from "react";
 import { Backend } from "../../relational/backend/backend";
+import { Cursor } from "../../relational/backend/cursor";
 
 interface BackendContextType {
     backend: Backend;
+    cursors: { id: number; cursor: Cursor }[];
+    setCursors: (cursors: { id: number; cursor: Cursor }[]) => void;
 }
 
 const BACKEND = new Backend();
@@ -30,4 +33,21 @@ t2.data.push([4, 8]);
 
 export const BackendContext = createContext<BackendContextType>({
     backend: BACKEND,
+    cursors: [],
+    setCursors: () => undefined,
 });
+
+export const BackendContextProvider: React.FC<{
+    children: React.ReactNode;
+}> = ({ children }) => {
+    const [cursors, setCursors] = useState<{ id: number; cursor: Cursor }[]>(
+        []
+    );
+    return (
+        <BackendContext.Provider
+            value={{ cursors, setCursors, backend: BACKEND }}
+        >
+            {children}
+        </BackendContext.Provider>
+    );
+};

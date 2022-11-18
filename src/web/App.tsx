@@ -2,6 +2,7 @@ import { SourceContextProvider } from "./contexts/SourceContext";
 import { Backend } from "./components/Backend";
 import { SqlCompiler } from "./components/SqlCompiler";
 import { Core } from "./components/Core";
+import { BackendContextProvider } from "./contexts/BackendContext";
 
 const Main: React.FC = () => {
     return (
@@ -20,8 +21,10 @@ const Main: React.FC = () => {
 
 export function App() {
     return (
-        <SourceContextProvider>
-            <Main />
-        </SourceContextProvider>
+        <BackendContextProvider>
+            <SourceContextProvider>
+                <Main />
+            </SourceContextProvider>
+        </BackendContextProvider>
     );
 }

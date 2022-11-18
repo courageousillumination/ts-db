@@ -18,11 +18,28 @@ const checkedCompile = (source: string, backend: Backend) => {
 
 export const DisplayBytecodeInstruction: React.FC<{
     instruction: BytecodeInstruction;
-}> = ({ instruction }) => {
+    index: number;
+}> = ({ instruction, index }) => {
     return (
-        <div style={{ fontFamily: "monospace" }}>
-            <span>{instruction.opcode}</span>
-            <span>{JSON.stringify(instruction.arguments)}</span>
+        <div style={{ display: "flex", gap: "8px" }}>
+            <span
+                style={{
+                    width: "16px",
+                    fontFamily: "monospace",
+                }}
+            >
+                {index}
+            </span>
+
+            <div
+                style={{
+                    fontFamily: "monospace",
+                    paddingLeft: `${(instruction.debug?.indent || 0) * 16}px`,
+                }}
+            >
+                <span>{instruction.opcode}</span>
+                <span>{JSON.stringify(instruction.arguments)}</span>
+            </div>
         </div>
     );
 };
@@ -37,7 +54,7 @@ export const Bytecode: React.FC = () => {
     return (
         <div>
             {bytecode.map((x, i) => (
-                <DisplayBytecodeInstruction instruction={x} key={i} />
+                <DisplayBytecodeInstruction instruction={x} key={i} index={i} />
             ))}
         </div>
     );

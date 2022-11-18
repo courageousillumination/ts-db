@@ -1,21 +1,32 @@
 import { useContext } from "react";
 import { Table } from "../../relational/backend/backend";
+import { Cursor } from "../../relational/backend/cursor";
 import { BackendContext } from "../contexts/BackendContext";
 
-const DisplayTable: React.FC<{ table: Table }> = ({ table }) => {
+const DisplayTable: React.FC<{
+    table: Table;
+    cursors: { id: number; cursor: Cursor }[];
+}> = ({ table, cursors }) => {
     return (
         <div style={{ margin: 16 }}>
             <h3>{table.name}</h3>
-            <table>
-                <th>
+            <table style={{ borderSpacing: "16px" }}>
+                <tr>
+                    <th>{`Cursors`}</th>
                     {table.columns.map((x) => (
-                        <td key={x.name}>{x.name}</td>
+                        <th key={x.name}>{x.name}</th>
                     ))}
-                </th>
+                </tr>
                 <tbody>
                     {table.data.map((x, i) => {
                         return (
                             <tr>
+                                <td>
+                                    {cursors
+                                        .filter((x) => x.cursor.position === i)
+                                        .map((x) => x.id)
+                                        .join(",")}
+                                </td>
                                 {x.map((y, j) => (
                                     <td key={j}>{JSON.stringify(y)}</td>
                                 ))}
@@ -29,8 +40,11 @@ const DisplayTable: React.FC<{ table: Table }> = ({ table }) => {
 };
 
 export const Backend = () => {
-    const { backend } = useContext(BackendContext);
+    const { backend, cursors } = useContext(BackendContext);
     const tables = backend.getTables();
+
+    console.log(cursors);
+
     return (
         <div
             style={{
@@ -44,7 +58,13 @@ export const Backend = () => {
             <h3>Backend</h3>
             <div style={{ display: "flex" }}>
                 {tables.map((t, i) => (
-                    <DisplayTable table={t} key={i} />
+                    <DisplayTable
+                        table={t}
+                        key={i}
+                        cursors={cursors.filter(
+                            (x) => x.cursor.tableName === t.name
+                        )}
+                    />
                 ))}
             </div>
         </div>
