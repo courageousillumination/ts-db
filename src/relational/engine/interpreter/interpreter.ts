@@ -1,4 +1,4 @@
-import { Backend } from "../../backend/backend";
+import { Backend, Table } from "../../backend/backend";
 import { Cursor } from "../../backend/cursor";
 import { CreateIndexNode, CreateNode } from "../../parser/ast/create";
 import {
@@ -11,113 +11,12 @@ import { InsertNode } from "../../parser/ast/insert";
 import { CompoundSelect, SimpleSelectNode } from "../../parser/ast/select";
 import { StatementNode } from "../../parser/ast/statement";
 import { UpdateNode } from "../../parser/ast/update";
+import {
+    ConstantConstraint,
+    Constraint,
+    ConstraintSolver,
+} from "../shared/constraint-solver";
 import { OPERATORS } from "../shared/operators";
-
-// For each table, get all column that are indexed
-// Walk the where expression.
-//      If you encounter a bare AND/OR combine the results from either side.
-//      If you encounter an equality with an plain index on one side and a literal add that to the index set.
-//      Same for `in`
-//      If you can index a dependency I guess do that [HARD]
-
-const unionConstraints = (a: Constraint[], b: Constraint[]) => {
-    const union = [...a];
-    for (const constraint of b) {
-        const existing = union.find((x) => x.column === constraint.column);
-        if (existing) {
-            const leftNums = existing.constraints;
-            const rightNums = constraint.constraints;
-            existing.constraints = [...new Set([...leftNums, ...rightNums])];
-        } else {
-            union.push(constraint);
-        }
-    }
-    return union;
-};
-
-const intersectConstraints = (a: Constraint[], b: Constraint[]) => {
-    const intersection = [...a];
-
-    for (const constraint of b) {
-        const existing = intersection.find(
-            (x) => x.column === constraint.column
-        );
-        if (existing) {
-            // TODO: Need to better handle this case...
-            return [];
-        } else {
-            intersection.push(constraint);
-        }
-    }
-    return intersection;
-};
-
-type Constraint = { column: string; constraints: number[] };
-
-const getEquiConstraints = (
-    left: ExpressionNode,
-    right: ExpressionNode
-): Constraint[] | undefined => {
-    if (left.subType !== "column") {
-        // Where the right is a column is handled higher up.
-        return;
-    }
-
-    if (right.subType !== "literal-value") {
-        // We could handle literal computations, but right now just values.
-        return;
-    }
-
-    return [{ column: left.columnName, constraints: [right.value as number] }];
-};
-
-const computeColumnConstraints = (expression: ExpressionNode): Constraint[] => {
-    if (expression.subType === "operator") {
-        switch (expression.operator) {
-            case "and":
-                return intersectConstraints(
-                    computeColumnConstraints(expression.arguments[0]),
-                    computeColumnConstraints(expression.arguments[1])
-                );
-            case "or":
-                return unionConstraints(
-                    computeColumnConstraints(expression.arguments[0]),
-                    computeColumnConstraints(expression.arguments[1])
-                );
-            case "equal":
-                const left = expression.arguments[0];
-                const right = expression.arguments[1];
-                return (
-                    getEquiConstraints(left, right) ||
-                    getEquiConstraints(right, left) ||
-                    []
-                );
-            default:
-                return [];
-        }
-    } else if (expression.subType === "in") {
-        if (expression.expression.subType !== "column") {
-            return [];
-        }
-
-        if (!Array.isArray(expression.list)) {
-            return [];
-        }
-        const values: LiteralValueExpresisonNode[] = expression.list.filter(
-            (x) => x.subType === "literal-value"
-        ) as any;
-        if (values.length !== expression.list.length) {
-            return [];
-        }
-        return [
-            {
-                column: expression.expression.columnName,
-                constraints: [...new Set(values.map((x) => x.value as number))],
-            },
-        ];
-    }
-    return [];
-};
 
 const rowEqual = (a: any[], b: any[]) => {
     if (a.length !== b.length) {
@@ -197,6 +96,37 @@ const applyCompoundOperator = (
     throw new Error("unsupported operation");
 };
 
+const isValidConstraint = (
+    resolvedColumns: string[],
+    constraint: Constraint
+): boolean => {
+    if (constraint.type === "constant" || constraint.type === "none") {
+        return true;
+    }
+
+    if (constraint.type === "column") {
+        if (resolvedColumns.includes(constraint.rightColumn)) {
+            return true;
+        }
+    }
+
+    if (constraint.type === "or") {
+        // This is valid if all of the sub clauses are valid
+        return constraint.constraints.every((x) =>
+            isValidConstraint(resolvedColumns, x)
+        );
+    }
+
+    if (constraint.type === "and") {
+        // This is valid if all of the sub clauses are valid
+        return constraint.constraints.some((x) =>
+            isValidConstraint(resolvedColumns, x)
+        );
+    }
+
+    return false;
+};
+
 /** Aggregation functions. */
 const AGGREGATORS: Record<string, (a: any, b: any) => any> = {
     sum: (a, b) => (a || 0) + b,
@@ -245,51 +175,11 @@ const isAggregate = (expression: ExpressionNode): boolean => {
     }
 };
 
-const advanceCursors = (cursors: Cursor[], constraints: Constraint[]) => {
-    for (let i = 0; i < cursors.length; i++) {
-        // Try to advance the cursor to the next row.
-        if (cursors[i].next()) {
-            break;
-        }
-
-        // See if we have constraints we should apply on this cursor
-        const cursorConstraint = constraints.find((x) =>
-            cursors[i].hasColumn(x.column)
-        );
-        if (cursorConstraint) {
-            const { value } = cursors[i].currentIndexingValue || {
-                value: 0,
-            };
-            const index = cursorConstraint.constraints.findIndex(
-                (x) => x === value
-            );
-            if (index < cursorConstraint.constraints.length - 1) {
-                cursors[i].seekIndex(
-                    cursorConstraint.column,
-                    cursorConstraint.constraints[index + 1]
-                );
-                break;
-            }
-
-            // If we can move to the next value, do so then break.
-        }
-
-        // We've reached the real end of this cursor.
-        if (i === cursors.length - 1) {
-            break;
-        }
-
-        if (cursorConstraint) {
-            cursors[i].seekIndex(
-                cursorConstraint.column,
-                cursorConstraint.constraints[0]
-            );
-        } else {
-            // We're doing a full table scan
-            cursors[i].rewind();
-        }
-    }
-};
+interface CursorAndConstraint {
+    cursor: Cursor;
+    constraint: Constraint;
+    position?: number; // Position if using an or constraint
+}
 
 /** A tree walk interpreter for TS-DB */
 export class Interpreter {
@@ -354,8 +244,7 @@ export class Interpreter {
     }
 
     private *executeCreateIndex(statement: CreateIndexNode) {
-        // We ignore indexes for now.
-        return;
+        this.backend.createIndex(statement.table, statement.columns);
     }
 
     private *executeCompoundSelect(statement: CompoundSelect) {
@@ -479,26 +368,114 @@ export class Interpreter {
             cursors.push(cursor);
         }
 
-        const useConstraints = cursors.length > 2;
+        let orderdConstraints: [string, Constraint][] = [];
 
-        const constraints: Constraint[] =
-            statement.where && useConstraints
-                ? computeColumnConstraints(statement.where)
-                : [];
+        // A bit of hackery since the constraint planning may break some other
+        // things....
+        if (statement.where && statement.tables.length > 2) {
+            const constraints2: [string, Constraint][] = [];
 
-        if (constraints.length) {
-            for (const cursor of cursors) {
-                const cursorConstraint = constraints.find((x) =>
-                    cursor.hasColumn(x.column)
-                );
-                if (cursorConstraint) {
-                    cursor.seekIndex(
-                        cursorConstraint.column,
-                        cursorConstraint.constraints[0]
+            for (const table of statement.tables) {
+                const columns = this.backend.getColumns(table.tableName);
+                // I guess...
+                const indexedColumns = columns
+                    .filter((x) => x.primary || x.indexed)
+                    .map((x) => x.name);
+                const solver = new ConstraintSolver(indexedColumns);
+                const constraint = solver.calculateConstraints(statement.where);
+                constraints2.push([table.tableName, constraint]);
+            }
+            const resolvedColumns: string[] = [];
+
+            // So now I have constraints for each table. What I need to do is
+            // generate an ordered list of constraints as I should handle them.
+            for (const _ in constraints2) {
+                let updated = false;
+                for (const constraint of constraints2) {
+                    if (orderdConstraints.includes(constraint)) {
+                        continue;
+                    }
+
+                    let isValid = isValidConstraint(
+                        resolvedColumns,
+                        constraint[1]
                     );
+
+                    if (isValid) {
+                        orderdConstraints.push(constraint);
+                        for (const column of this.backend.getColumns(
+                            constraint[0]
+                        )) {
+                            resolvedColumns.push(column.name);
+                        }
+                        updated = true;
+                        break;
+                    }
+                }
+                if (!updated) {
+                    // This will happen if we have a loop. Just find one and put it in there as a full
+                    // table scan
+                    for (const constraint of constraints2) {
+                        if (orderdConstraints.includes(constraint)) {
+                            continue;
+                        }
+                        orderdConstraints.unshift([
+                            constraint[0],
+                            { type: "none" },
+                        ]);
+                        for (const column of this.backend.getColumns(
+                            constraint[0]
+                        )) {
+                            resolvedColumns.push(column.name);
+                        }
+                        break;
+                    }
+                }
+            }
+            if (orderdConstraints.length < statement.tables.length) {
+                console.log("did not find enough constraints");
+                return null;
+            }
+        }
+
+        let cursorsAndConstraints: CursorAndConstraint[];
+
+        if (orderdConstraints.length) {
+            cursorsAndConstraints = orderdConstraints.map((x) => ({
+                constraint: x[1],
+                cursor: cursors.find((y) => y.tableName === x[0]) as Cursor,
+                position: 0,
+            }));
+        } else {
+            cursorsAndConstraints = cursors.map((x) => ({
+                cursor: x,
+                constraint: { type: "none" },
+            }));
+        }
+
+        // Do any initial seeks
+        for (let i = 0; i < cursorsAndConstraints.length; i++) {
+            const valid = this.rewindCursor(cursorsAndConstraints[i]);
+            if (!valid) {
+                // We have a data dependency. Advance the parents until we get something valid
+
+                while (
+                    !cursorsAndConstraints
+                        .slice(0, i + 1)
+                        .every((x) => x.cursor.isValid())
+                ) {
+                    const b = this.advance(
+                        cursorsAndConstraints.slice(0, i + 1)
+                    );
+
+                    if (b) {
+                        console.log("Could not find a proper rewind");
+                        return;
+                    }
                 }
             }
         }
+
         // We'll start accumulating if any of our selects have an aggregate in them.
         this.isAccumulating = statement.columns.some(
             (x) => x.type === "expression" && isAggregate(x.expression)
@@ -506,8 +483,9 @@ export class Interpreter {
         this.aggregateAccumulator = new Map();
         const requiresSort = !!statement.orderBy;
         const sortlist = [];
+
         // Loop until the last cursor has no more data.
-        while (cursors[cursors.length - 1].hasData()) {
+        while (cursorsAndConstraints.every((x) => x.cursor.isValid())) {
             // First check if this current row is going to be vaild
             const isValid = statement.where
                 ? !!this.evaluateExpression(statement.where)
@@ -526,7 +504,10 @@ export class Interpreter {
             }
 
             // Find the next cursor to advance, starting at the end.
-            advanceCursors(cursors, constraints);
+            const shouldBreak = this.advance(cursorsAndConstraints);
+            if (shouldBreak) {
+                break;
+            }
         }
 
         if (this.isAccumulating) {
@@ -735,6 +716,104 @@ export class Interpreter {
         }
         const evaluatedArgs = args.map((e) => this.evaluateExpression(e));
         return opFunction(...evaluatedArgs);
+    }
+
+    private advance(cursorsAndConstraints: CursorAndConstraint[]) {
+        // We start from the end. See if the current
+        for (let i = cursorsAndConstraints.length - 1; i >= 0; i--) {
+            const { cursor, constraint, position } = cursorsAndConstraints[i];
+
+            let rewindChildren = false;
+
+            if (
+                constraint.type === "constant" ||
+                constraint.type === "column"
+            ) {
+                if (cursor.hasNextIndex()) {
+                    cursor.next();
+                    rewindChildren = true;
+                }
+            } else if (
+                constraint.type === "or" &&
+                constraint.constraints.every((x) => x.type === "constant")
+            ) {
+                // We're doing a constant or. For this we can just use the current position.
+
+                if (cursor.hasNextIndex()) {
+                    cursor.next();
+                    rewindChildren = true;
+                } else {
+                    const cursorAndConstraint = cursorsAndConstraints[i];
+                    (cursorAndConstraint as any).position++;
+                    while (
+                        (cursorAndConstraint.position || 0) <
+                        constraint.constraints.length
+                    ) {
+                        const c = constraint.constraints[
+                            cursorAndConstraint.position || 0
+                        ] as any as ConstantConstraint;
+                        cursor.seekIndex(c.column, c.value);
+                        if (cursor.isValid()) {
+                            rewindChildren = true;
+                            break;
+                        }
+                        (cursorAndConstraint as any).position++;
+                    }
+                }
+            } else {
+                // No constraints, we'll do a full table scan.
+                if (cursor.hasNext()) {
+                    cursor.next();
+                    rewindChildren = true;
+                }
+            }
+
+            if (!rewindChildren && i === 0) {
+                // We're trying to rewind the last cursor. Time to break
+                return true;
+            }
+
+            // Rewind everything else underneath this.
+            if (rewindChildren) {
+                for (let j = i + 1; j < cursorsAndConstraints.length; j++) {
+                    this.rewindCursor(cursorsAndConstraints[j]);
+                }
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private rewindCursor(cursorAndConstraint: CursorAndConstraint) {
+        const { cursor, constraint } = cursorAndConstraint;
+        if (constraint.type === "constant") {
+            cursor.seekIndex(constraint.column, constraint.value);
+        } else if (constraint.type === "column") {
+            cursor.seekIndex(
+                constraint.column,
+                this.getColumn(constraint.rightColumn)
+            );
+        } else if (
+            constraint.type === "or" &&
+            constraint.constraints.every((x) => x.type === "constant")
+        ) {
+            cursorAndConstraint.position = 0;
+            while (
+                cursorAndConstraint.position < constraint.constraints.length
+            ) {
+                const c = constraint.constraints[
+                    cursorAndConstraint.position
+                ] as any as ConstantConstraint;
+                cursor.seekIndex(c.column, c.value);
+                if (cursor.isValid()) {
+                    break;
+                }
+                cursorAndConstraint.position++;
+            }
+        } else {
+            cursor.rewind();
+        }
+        return cursor.isValid();
     }
 
     /** Throws an error. */

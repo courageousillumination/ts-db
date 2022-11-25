@@ -1,9 +1,13 @@
 import { ColumnDefinition } from "../parser/ast/create";
 import { Cursor } from "./cursor";
 
+interface TableColumnDefinition extends ColumnDefinition {
+    indexed?: boolean;
+}
+
 export interface Table {
     name: string;
-    columns: ColumnDefinition[];
+    columns: TableColumnDefinition[];
     data: unknown[][];
 }
 
@@ -14,6 +18,20 @@ export class Backend {
     public createTable(name: string, columns: ColumnDefinition[]) {
         this.tables.push({ name, columns, data: [] });
     }
+
+    public createIndex(
+        table: string,
+        columns: { column: string; direction: "asc" | "desc" }[]
+    ) {
+        const t = this.getTableByName(table);
+        const columnNames = columns.map((x) => x.column);
+        for (const column of t.columns) {
+            if (columnNames.includes(column.name)) {
+                column.indexed = true;
+            }
+        }
+    }
+
     public createCursor(name: string) {
         const table = this.getTableByName(name);
         return new Cursor(table.data, table.columns, table.name);

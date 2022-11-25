@@ -2370,7 +2370,7 @@ query TTTT valuesort join-4-1
 SELECT x29,x31,x51,x55
   FROM t51,t29,t31,t55
  WHERE a51=b31
-   AND a29=6
+   AND a29=6   -- t55 (full), t29, t31, 51
    AND a29=b51
    AND b55=a31
 ----

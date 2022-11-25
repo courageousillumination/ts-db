@@ -72,6 +72,37 @@ export class Cursor {
         return this.position < this.data.length;
     }
 
+    public hasNext() {
+        return this.position < this.data.length - 1;
+    }
+
+    public isValid() {
+        if (this.position >= this.data.length) {
+            return false;
+        }
+
+        if (!this.currentIndexingValue) {
+            return true;
+        }
+        const { column, value } = this.currentIndexingValue;
+        return this.data[this.position][column] === value;
+    }
+
+    public hasNextIndex() {
+        if (!this.currentIndexingValue) {
+            return false;
+        }
+
+        const { column, value } = this.currentIndexingValue;
+
+        for (let i = this.position + 1; i < this.data.length; i++) {
+            if (this.data[i][column] === value) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public getColumnByIndex(index: number) {
         const value = this.data[this.position][index];
         return value !== undefined ? value : null;

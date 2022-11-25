@@ -3136,7 +3136,22 @@ CREATE INDEX t7e7 ON t7(e7)
 statement ok
 CREATE INDEX t8all ON t8(e8 DESC, d8 ASC, c8 DESC, b8 ASC, a8 DESC)
 
-query T valuesort
-SELECT b5+342+a6, d4+810+a1, c8, a1, d6+b1, c7+554, x2 FROM t8, t7, t1, t4, t5, t2, t6 WHERE c5 in (527,894,649,941,101,198,313) AND e7 in (254,456,197,851,455,356,793,624) AND b4 in (765,593,295,849,708,917) AND e8=980 AND d6 in (590,73,34,942,970,786,21,35) AND a1=b2 AND c2=a5
+query IIIIIT rowsort join5
+SELECT a3, a2, e1, a9+b9, e4*658+b1, x8
+  FROM t3, t1, t9, t2, t8, t4
+ WHERE (e9=245 OR 35=e9 OR 799=e9)
+   AND c2=374
+   AND a3=e1
+   AND b4 in (408,261,877,33)
+   AND e8 in (874,329,487,242,533,56,203,893)
+   AND a1 in (380,992,32,189,338,358,161,538)
 ----
-41 values hashing to bbf619d1c2aae1fc385fb08bddcae829
+576 values hashing to c789dacd971282b5b5ae05dea9f4dd1b
+SELECT a3, a2, e1, a9+b9, e4*658+b1, x8
+  FROM t3, t1, t9, t2, t8, t4
+ WHERE (e9=245 OR 35=e9 OR 799=e9)
+   AND c2=374
+   AND a3=e1
+   AND b4 in (408,261,877,33)
+   AND e8 in (874,329,487,242,533,56,203,893)
+   AND a1 in (380,992,32,189,338,358,161,538)
