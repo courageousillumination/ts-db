@@ -4,11 +4,14 @@ let COLUMN_COUNT = 0;
 export class Cursor {
     public position = 0;
 
-    public currentIndexingValue?: { column: number; value: unknown };
+    private indexPosition = 0;
+
+    public currentIndexingValue?: { column: string; value: unknown };
     constructor(
         private readonly data: unknown[][],
         private readonly columns: ColumnDefinition[],
-        public readonly tableName: string
+        public readonly tableName: string,
+        private readonly indices: Record<string, Record<any, number[]>>
     ) {}
 
     /** Advance to the next row in the table. */
@@ -17,12 +20,15 @@ export class Cursor {
             this.position++;
         } else {
             const { column, value } = this.currentIndexingValue;
-            do {
-                this.position++;
-            } while (
-                this.position < this.data.length &&
-                this.data[this.position][column] !== value
-            );
+            const indexValues = this.indices[column][value as any];
+            if (indexValues && this.indexPosition < indexValues.length - 1) {
+                this.indexPosition++;
+                this.position = indexValues[this.indexPosition];
+                return true;
+            } else {
+                this.position = this.data.length + 1;
+                return false;
+            }
         }
         return this.hasData();
     }
@@ -41,17 +47,15 @@ export class Cursor {
     }
 
     public seekIndex(columnName: string, value: unknown) {
-        const columnIndex = this.columns.findIndex(
-            (x) => x.name === columnName
-        );
-        if (columnIndex === -1) {
-            throw new Error("No column");
-        }
-        this.currentIndexingValue = { column: columnIndex, value };
-        this.rewind();
+        this.currentIndexingValue = { column: columnName, value };
 
-        if (this.data[this.position][columnIndex] !== value) {
-            this.next();
+        this.indexPosition = 0;
+
+        const indexValues = this.indices[columnName][value as any];
+        if (indexValues && indexValues.length > 0) {
+            this.position = indexValues[0];
+        } else {
+            this.position = this.data.length + 1;
         }
     }
 
@@ -84,8 +88,10 @@ export class Cursor {
         if (!this.currentIndexingValue) {
             return true;
         }
+
         const { column, value } = this.currentIndexingValue;
-        return this.data[this.position][column] === value;
+        const indexValues = this.indices[column][value as any];
+        return indexValues && this.indexPosition < indexValues.length;
     }
 
     public hasNextIndex() {
@@ -95,12 +101,8 @@ export class Cursor {
 
         const { column, value } = this.currentIndexingValue;
 
-        for (let i = this.position + 1; i < this.data.length; i++) {
-            if (this.data[i][column] === value) {
-                return true;
-            }
-        }
-        return false;
+        const indexValues = this.indices[column][value as any];
+        return indexValues && this.indexPosition < indexValues.length - 1;
     }
 
     public getColumnByIndex(index: number) {

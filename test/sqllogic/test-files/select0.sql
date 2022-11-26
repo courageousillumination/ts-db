@@ -3137,21 +3137,6 @@ statement ok
 CREATE INDEX t8all ON t8(e8 DESC, d8 ASC, c8 DESC, b8 ASC, a8 DESC)
 
 query IIIIIT rowsort join5
-SELECT a3, a2, e1, a9+b9, e4*658+b1, x8
-  FROM t3, t1, t9, t2, t8, t4
- WHERE (e9=245 OR 35=e9 OR 799=e9)
-   AND c2=374
-   AND a3=e1
-   AND b4 in (408,261,877,33)
-   AND e8 in (874,329,487,242,533,56,203,893)
-   AND a1 in (380,992,32,189,338,358,161,538)
+SELECT d3 FROM t3 WHERE (a3=380 OR 550=e3 OR b3=317) EXCEPT SELECT c7 FROM t7 WHERE NOT ((346=d7 AND 638=e7 AND c7=145))
 ----
 576 values hashing to c789dacd971282b5b5ae05dea9f4dd1b
-SELECT a3, a2, e1, a9+b9, e4*658+b1, x8
-  FROM t3, t1, t9, t2, t8, t4
- WHERE (e9=245 OR 35=e9 OR 799=e9)
-   AND c2=374
-   AND a3=e1
-   AND b4 in (408,261,877,33)
-   AND e8 in (874,329,487,242,533,56,203,893)
-   AND a1 in (380,992,32,189,338,358,161,538)

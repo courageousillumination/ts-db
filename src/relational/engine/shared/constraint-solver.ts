@@ -31,7 +31,7 @@ export type Constraint =
     | NullConstraint;
 
 // Flattens out and and ors
-const simplifyConstraint = (constraint: Constraint): Constraint => {
+export const simplifyConstraint = (constraint: Constraint): Constraint => {
     if (
         constraint.type === "none" ||
         constraint.type === "column" ||
@@ -66,6 +66,45 @@ const simplifyConstraint = (constraint: Constraint): Constraint => {
         if (listOfConstants) {
             return listOfConstants;
         }
+
+        // Just choose one arbitrarily.
+        return subConstraints[0];
+    }
+
+    if (constraint.type === "or") {
+        const everyConstant = subConstraints.every(
+            (y) => y.type === "constant"
+        );
+        if (everyConstant) {
+            const values = [
+                ...new Set(subConstraints.map((x: any) => x.value)),
+            ];
+
+            return {
+                type: "or",
+                constraints: values.map(
+                    (x): ConstantConstraint => ({
+                        type: "constant",
+                        value: x,
+                        column: (subConstraints[0] as any).column,
+                    })
+                ),
+            };
+        }
+
+        // Unwrap underneath constraints
+        const constraints = [];
+        for (const constraint of subConstraints) {
+            if (constraint.type === "or") {
+                constraints.push(...constraint.constraints);
+            } else {
+                constraints.push(constraint);
+            }
+        }
+        return {
+            type: "or",
+            constraints,
+        };
     }
 
     return constraint;

@@ -1,3 +1,4 @@
+import { Console } from "console";
 import { Backend, Table } from "../../backend/backend";
 import { Cursor } from "../../backend/cursor";
 import { CreateIndexNode, CreateNode } from "../../parser/ast/create";
@@ -15,6 +16,7 @@ import {
     ConstantConstraint,
     Constraint,
     ConstraintSolver,
+    simplifyConstraint,
 } from "../shared/constraint-solver";
 import { OPERATORS } from "../shared/operators";
 
@@ -382,7 +384,9 @@ export class Interpreter {
                     .filter((x) => x.primary || x.indexed)
                     .map((x) => x.name);
                 const solver = new ConstraintSolver(indexedColumns);
-                const constraint = solver.calculateConstraints(statement.where);
+                const constraint = simplifyConstraint(
+                    solver.calculateConstraints(statement.where)
+                );
                 constraints2.push([table.tableName, constraint]);
             }
             const resolvedColumns: string[] = [];
@@ -453,26 +457,17 @@ export class Interpreter {
             }));
         }
 
+        if (orderdConstraints.filter((x) => x[1].type === "none").length >= 3) {
+            console.log("More than 3 table scans. Nah brah.");
+            return;
+        }
+
         // Do any initial seeks
         for (let i = 0; i < cursorsAndConstraints.length; i++) {
             const valid = this.rewindCursor(cursorsAndConstraints[i]);
             if (!valid) {
                 // We have a data dependency. Advance the parents until we get something valid
-
-                while (
-                    !cursorsAndConstraints
-                        .slice(0, i + 1)
-                        .every((x) => x.cursor.isValid())
-                ) {
-                    const b = this.advance(
-                        cursorsAndConstraints.slice(0, i + 1)
-                    );
-
-                    if (b) {
-                        console.log("Could not find a proper rewind");
-                        return;
-                    }
-                }
+                const val = this.advance(cursorsAndConstraints.slice(0, i + 1));
             }
         }
 
@@ -483,13 +478,13 @@ export class Interpreter {
         this.aggregateAccumulator = new Map();
         const requiresSort = !!statement.orderBy;
         const sortlist = [];
-
         // Loop until the last cursor has no more data.
         while (cursorsAndConstraints.every((x) => x.cursor.isValid())) {
             // First check if this current row is going to be vaild
             const isValid = statement.where
                 ? !!this.evaluateExpression(statement.where)
                 : true;
+
             if (isValid) {
                 const row = statement.columns.flatMap((x) =>
                     x.type === "expression"
@@ -504,12 +499,11 @@ export class Interpreter {
             }
 
             // Find the next cursor to advance, starting at the end.
-            const shouldBreak = this.advance(cursorsAndConstraints);
-            if (shouldBreak) {
+            const advanced = this.advance(cursorsAndConstraints);
+            if (!advanced) {
                 break;
             }
         }
-
         if (this.isAccumulating) {
             this.isAccumulating = false;
             const result = statement.columns.map((x) =>
@@ -705,6 +699,10 @@ export class Interpreter {
             this.error("Could not find open cursor");
         }
 
+        if (!cursor.isValid()) {
+            return undefined;
+        }
+
         return cursor.getColumn(column);
     }
 
@@ -718,70 +716,78 @@ export class Interpreter {
         return opFunction(...evaluatedArgs);
     }
 
-    private advance(cursorsAndConstraints: CursorAndConstraint[]) {
-        // We start from the end. See if the current
-        for (let i = cursorsAndConstraints.length - 1; i >= 0; i--) {
-            const { cursor, constraint, position } = cursorsAndConstraints[i];
-
-            let rewindChildren = false;
-
-            if (
-                constraint.type === "constant" ||
-                constraint.type === "column"
-            ) {
-                if (cursor.hasNextIndex()) {
-                    cursor.next();
-                    rewindChildren = true;
-                }
-            } else if (
-                constraint.type === "or" &&
-                constraint.constraints.every((x) => x.type === "constant")
-            ) {
-                // We're doing a constant or. For this we can just use the current position.
-
-                if (cursor.hasNextIndex()) {
-                    cursor.next();
-                    rewindChildren = true;
-                } else {
-                    const cursorAndConstraint = cursorsAndConstraints[i];
-                    (cursorAndConstraint as any).position++;
-                    while (
-                        (cursorAndConstraint.position || 0) <
-                        constraint.constraints.length
-                    ) {
-                        const c = constraint.constraints[
-                            cursorAndConstraint.position || 0
-                        ] as any as ConstantConstraint;
-                        cursor.seekIndex(c.column, c.value);
-                        if (cursor.isValid()) {
-                            rewindChildren = true;
-                            break;
-                        }
-                        (cursorAndConstraint as any).position++;
-                    }
-                }
+    private advance(cursorsAndConstraints: CursorAndConstraint[]): boolean {
+        if (cursorsAndConstraints.length === 0) {
+            // Nothing to advance.
+            return false;
+        }
+        const current = cursorsAndConstraints[cursorsAndConstraints.length - 1];
+        const { cursor, constraint } =
+            cursorsAndConstraints[cursorsAndConstraints.length - 1];
+        // Can we advance this single cursor?
+        // Try to advance a single cursor.
+        let hasAdvanced = false;
+        if (
+            current.constraint.type === "constant" ||
+            current.constraint.type === "column"
+        ) {
+            if (current.cursor.hasNextIndex()) {
+                current.cursor.next();
+                hasAdvanced = true;
+            }
+        } else if (
+            constraint.type === "or" &&
+            constraint.constraints.every((x) => x.type === "constant")
+        ) {
+            if (cursor.hasNextIndex()) {
+                cursor.next();
+                hasAdvanced = true;
             } else {
-                // No constraints, we'll do a full table scan.
-                if (cursor.hasNext()) {
-                    cursor.next();
-                    rewindChildren = true;
+                const cursorAndConstraint =
+                    cursorsAndConstraints[cursorsAndConstraints.length - 1];
+                (cursorAndConstraint as any).position++;
+                while (
+                    (cursorAndConstraint.position || 0) <
+                    constraint.constraints.length
+                ) {
+                    const c = constraint.constraints[
+                        cursorAndConstraint.position || 0
+                    ] as any as ConstantConstraint;
+                    cursor.seekIndex(c.column, c.value);
+
+                    if (cursor.isValid()) {
+                        hasAdvanced = true;
+                        break;
+                    }
+                    (cursorAndConstraint as any).position++;
                 }
             }
-
-            if (!rewindChildren && i === 0) {
-                // We're trying to rewind the last cursor. Time to break
-                return true;
-            }
-
-            // Rewind everything else underneath this.
-            if (rewindChildren) {
-                for (let j = i + 1; j < cursorsAndConstraints.length; j++) {
-                    this.rewindCursor(cursorsAndConstraints[j]);
-                }
-                return false;
+        } else {
+            if (cursor.hasNext()) {
+                cursor.next();
+                hasAdvanced = true;
             }
         }
-        return false;
+
+        // we've successfully advanced.
+        if (hasAdvanced) {
+            return true;
+        }
+
+        // otherwise, try to advance our parents.
+        do {
+            const advanced = this.advance(
+                cursorsAndConstraints.slice(0, cursorsAndConstraints.length - 1)
+            );
+            // console.log(cursorsAndConstraints.map((x) => x.cursor.position));
+
+            if (!advanced) {
+                return false;
+            }
+            this.rewindCursor(current);
+        } while (!current.cursor.isValid());
+        // We managed to advance
+        return true;
     }
 
     private rewindCursor(cursorAndConstraint: CursorAndConstraint) {
@@ -789,10 +795,13 @@ export class Interpreter {
         if (constraint.type === "constant") {
             cursor.seekIndex(constraint.column, constraint.value);
         } else if (constraint.type === "column") {
-            cursor.seekIndex(
-                constraint.column,
-                this.getColumn(constraint.rightColumn)
-            );
+            const value = this.getColumn(constraint.rightColumn);
+            cursor.seekIndex(constraint.column, value);
+            // if (value !== undefined) {
+
+            // } else {
+            //     cursor.seekIndex(constraint.column, );
+            // }
         } else if (
             constraint.type === "or" &&
             constraint.constraints.every((x) => x.type === "constant")

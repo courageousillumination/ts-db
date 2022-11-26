@@ -36,9 +36,8 @@ const testFiles = [
     "select1.sql",
     "select2.sql",
     "select3.sql",
+    "select4.sql",
     "select5.sql",
-    // WIP
-    // "select4.sql",
 ];
 
 const arrayComp = (a: any[], b: any[]) => {
@@ -61,22 +60,22 @@ describe("sqllogic", () => {
     describe.each(testFiles)("%s", (testFile) => {
         const records = loadTestsFromFile(FILE_BASE + testFile);
         const queriesAndStatements = records.map(getQueryString);
-        const queries = records
-            .filter((x) => x.type === "query")
-            .map(getQueryString);
-        // .slice(0, 1);
-        // .slice(1040, 1050);
+        const queries = [
+            ...new Set(
+                records.filter((x) => x.type === "query").map(getQueryString)
+            ),
+        ];
         const statements = records
             .filter((x) => x.type === "statement")
             .map(getQueryString);
 
-        // describe("parsing", () => {
-        //     test.each(queriesAndStatements)("parses %s", (x) => {
-        //         parse(x);
-        //     });
-        // });
+        describe("parsing", () => {
+            test.each(queriesAndStatements)("parses %s", (x) => {
+                parse(x);
+            });
+        });
 
-        describe.only("execution", () => {
+        describe("execution", () => {
             let client: RelationalClient;
             let reference: sqlite3.Database;
             beforeAll(async () => {
@@ -95,7 +94,6 @@ describe("sqllogic", () => {
             test.each(queries)("executes %s", async (x) => {
                 const result = client.execute(x, "interpreter");
                 const referenceResult = await sqliteAll(reference, x);
-
                 const record = getRecord(records, x);
                 if (
                     record?.type === "query" &&
@@ -105,9 +103,10 @@ describe("sqllogic", () => {
                     result.sort(arrayComp);
                     (referenceResult as any).sort(arrayComp);
                 }
-                // console.log(result, reference)
                 expect(result).toEqual(referenceResult);
             });
         });
     });
 });
+
+jest.setTimeout(15000);
